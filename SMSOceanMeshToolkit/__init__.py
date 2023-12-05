@@ -1,4 +1,4 @@
 from .Region import Region
-from geospatial_data import Shoreline
+from geospatial_data import CoastalGeometry
 
-__all__ = ['Region']
+__all__ = ['Region', 'CoastalGeometry']

@@ -1,0 +1,28 @@
+from setuptools import setup, find_packages
+
+setup(
+    name="SMSOceanMeshToolkit",
+    version="0.1",
+    packages=find_packages(),
+    author="Keith Roberts",
+    author_email="kroberts@baird.com",
+    description="Tools for oceanmesh to interface with SMS",
+    long_description=open('README.md').read(),
+    long_description_content_type='text/markdown',
+    url="<url_to_package_repo>",
+    classifiers=[
+        "Programming Language :: Python :: 3",
+        "License :: OSI Approved :: GPLv3",
+        "Operating System :: OS Independent",
+    ],
+    python_requires='>=3.8',
+    install_requires=[
+        'numpy',
+        'pandas',
+        'geopandas',
+        'shapely',
+        'matplotlib',
+        'pyproj',
+        'fiona'
+    ],
+)
