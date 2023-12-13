@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="SMSOceanMeshToolkit",
-    version="0.1",
+    version="0.1.0",
     packages=find_packages(),
     author="Keith Roberts",
     author_email="kroberts@baird.com",

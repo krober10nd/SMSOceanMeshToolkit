@@ -16,7 +16,7 @@ import shapely.geometry
 import shapely.validation
 from pyproj import CRS
 
-from .region import Region
+from .Region import Region
 
 nan = np.nan
 fiona_version = fiona.__version__
@@ -311,6 +311,14 @@ def remove_dup(arr: np.ndarray):
     result = np.concatenate((arr[np.nonzero(np.diff(arr))[0]], [arr[-1]]))
     return result
 
+def convert_to_list_of_lists(data_list):
+    # Split the list into sublists at NaNs and filter out empty lists
+    tmp =  [list(group) for group in np.split(data_list, np.where(np.isnan(data_list))[0]) if len(group) > 0]
+    tmp = [np.vstack(d) for d in tmp]
+    # drop the last NaN
+    tmp = tmp[:-1]
+    return tmp
+
 
 class CoastalGeometry(Region):
     """
@@ -363,20 +371,20 @@ class CoastalGeometry(Region):
             _boubox = np.asarray(_create_boubox(bounding_box))
         else:
             # assume the bounding box is a polygon
-            _boubox = np.asarray(bbox)
+            _boubox = np.asarray(bounding_box)
 
             # ensure the polygon is ccw
             if not _is_path_ccw(_boubox):
                 _boubox = np.flipud(_boubox)
             # ensure the polygon is closed
-            bbox = (
+            bounding_box = (
                 np.nanmin(_boubox[:, 0]),
                 np.nanmax(_boubox[:, 0]),
                 np.nanmin(_boubox[:, 1]),
                 np.nanmax(_boubox[:, 1]),
             )
         # initialize the Region class
-        super().__init__(bbox, crs)
+        super().__init__(bounding_box, crs)
 
         self.vector_data = vector_data
         self.minimum_mesh_size = minimum_mesh_size
@@ -412,6 +420,21 @@ class CoastalGeometry(Region):
             self.minimum_mesh_size / 2,
             self.minimum_area_mult,
         )
+
+    def __repr__(self):
+        outputs = []
+        outputs.append("\nCoastalGeometry object")
+        outputs.append(f"vector_data: {self.vector_data}")
+        outputs.append(f"bbox: {self.bbox}")
+        outputs.append(f"minimum_mesh_size: {self.minimum_mesh_size}")
+        outputs.append(f"minimum_area_mult: {self.minimum_area_mult}")
+        outputs.append(f"refinements: {self.refinements}")
+        # list the number of classified segments
+        outputs.append(f"inner: {len(self.inner)} nodes")
+        outputs.append(f"outer: {len(self.outer)} nodes")
+        outputs.append(f"mainland: {len(self.mainland)} nodes")
+        outputs.append(f"crs: {self.crs}")
+        return "\n".join(outputs)
 
     @property
     def vector_data(self):
@@ -458,7 +481,8 @@ class CoastalGeometry(Region):
 
     @staticmethod
     def transform_to(gdf, dst_crs):
-        """Transform geodataframe ``gdf`` representing
+        """
+        Transform geodataframe ``gdf`` representing
         a shoreline to dst_crs
         """
         dst_crs = CRS.from_user_input(dst_crs)
@@ -467,25 +491,29 @@ class CoastalGeometry(Region):
             gdf = gdf.to_crs(dst_crs)
         return gdf
 
-    @staticmethod
     def to_geodataframe(self):
         """
         Convert the processed vector data to a vector file
         """
         # Package up the inner, outer, and mainland data into a geodataframe
         # raise an error if the data is not processed yet
-        if len(self.inner) == 0 & len(self.outer) == 0 & len(self.mainland) == 0:
-            raise ValueError("Vector data has not been processed yet")
+        #if len(self.outer) == 0:
+        #    raise ValueError("Vector data has not been processed yet")
+        # where mainland has a row of nans separating each polygon
+        # into a new sublist 
+        mainland = convert_to_list_of_lists(self.mainland)
+        inner = convert_to_list_of_lists(self.inner)
+        outer = convert_to_list_of_lists(self.outer)
 
         _tmp = []
         labels = []
-        for _inner in self.inner:
+        for _inner in inner:
             _tmp.append(shapely.geometry.Polygon(_inner))
             labels.append("inner")
-        for _mainland in self.mainland:
+        for _mainland in mainland:
             _tmp.append(shapely.geometry.Polygon(_mainland))
             labels.append("mainland")
-        for _outer in self.outer:
+        for _outer in outer:
             _tmp.append(shapely.geometry.Polygon(_outer))
             labels.append("outer")
         # Create a geodataframe
@@ -596,7 +624,7 @@ class CoastalGeometry(Region):
             fill=None,
             hatch="////",
             alpha=0.2,
-            label="bounding box", 
+            label="bounding box",
         )
 
         border = 0.10 * (xmax - xmin)
@@ -624,8 +652,8 @@ class CoastalGeometry(Region):
 
         if show:
             plt.show()
-            
+
         if file_name is not None:
             plt.savefig(file_name, dpi=300, bbox_inches="tight")
-        
+
         return ax
