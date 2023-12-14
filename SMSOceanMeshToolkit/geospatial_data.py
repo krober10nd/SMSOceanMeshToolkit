@@ -149,16 +149,17 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
     mainland[:] = nan
 
     polyL = _convert_to_list(polys)
-    bSGP = shapely.geometry.Polygon(boubox)
+    boxSGP = shapely.geometry.Polygon(boubox)
 
     for poly in polyL:
         pSGP = shapely.geometry.Polygon(poly[:-2, :])
-        if bSGP.contains(pSGP):
+        if boxSGP.contains(pSGP):
             area = pSGP.area
             if area >= _AREAMIN:
                 inner = np.append(inner, poly, axis=0)
-        elif pSGP.overlaps(bSGP):
-            bSGP = bSGP.difference(pSGP)
+        elif pSGP.overlaps(boxSGP):
+            bSGP = boxSGP.difference(pSGP)
+            #bSGP = boxSGP.symmetric_difference(pSGP)
             # Append polygon segment to mainland
             mainland = np.vstack((mainland, poly))
             # Clip polygon segment from boubox and regenerate path
@@ -224,7 +225,8 @@ def _smooth_vector_data(polys, N):
 
 
 def _clip_polys(polys, bbox, delta=0.10):
-    """Clip segments in `polys` that intersect with `bbox`.
+    """
+    Clip segments in `polys` that intersect with `bbox`.
     Clipped segments need to extend outside `bbox` to avoid
     false positive `all(inside)` cases. Solution here is to
     add a small offset `delta` to the `bbox`.
@@ -313,9 +315,13 @@ def remove_dup(arr: np.ndarray):
 
 def convert_to_list_of_lists(data_list):
     # Split the list into sublists at NaNs and filter out empty lists
-    tmp =  [list(group) for group in np.split(data_list, np.where(np.isnan(data_list))[0]) if len(group) > 0]
+    # if the number of nans in data_list is 2 then don't add 1 to the index
+    if np.sum(np.isnan(data_list)) == 2:
+        tmp =  [list(group) for group in np.split(data_list, np.unique(np.where(np.isnan(data_list))[0])) if len(group) > 0]
+    else:
+        tmp =  [list(group) for group in np.split(data_list, np.unique(np.where(np.isnan(data_list))[0]+1)) if len(group) > 0]
     tmp = [np.vstack(d) for d in tmp]
-    # drop the last NaN
+    # drop the trailing NaN
     tmp = tmp[:-1]
     return tmp
 
@@ -369,27 +375,40 @@ class CoastalGeometry(Region):
         if isinstance(bounding_box, tuple):
             # form a bounding box polygon
             _boubox = np.asarray(_create_boubox(bounding_box))
-        else:
+        elif isinstance(bounding_box, np.ndarray):
             # assume the bounding box is a polygon
             _boubox = np.asarray(bounding_box)
 
-            # ensure the polygon is ccw
-            if not _is_path_ccw(_boubox):
-                _boubox = np.flipud(_boubox)
-            # ensure the polygon is closed
-            bounding_box = (
-                np.nanmin(_boubox[:, 0]),
-                np.nanmax(_boubox[:, 0]),
-                np.nanmin(_boubox[:, 1]),
-                np.nanmax(_boubox[:, 1]),
-            )
-        # initialize the Region class
+        elif isinstance(bounding_box, str): # then assume shapefile 
+            # try to read 
+            _boubox = gpd.read_file(bounding_box)
+            # only retain the first entry 
+            _boubox = _boubox.iloc[0].geometry
+            # ensure its a polygon 
+            if _boubox.geom_type != 'Polygon':
+                raise ValueError(f"Bounding box must be a polygon. Got {_boubox.geom_type} instead.")
+            # convert to numpy array
+            _boubox = np.asarray(_boubox.exterior.coords)
+        else: 
+            raise ValueError(f"Bounding box must be a tuple, numpy array, or shapefile. Got {type(bounding_box)} instead.")
+        
+         # ensure the polygon is ccw
+        if not _is_path_ccw(_boubox):
+            _boubox = np.flipud(_boubox)
+           
+        bounding_box = (
+            np.nanmin(_boubox[:, 0]),
+            np.nanmax(_boubox[:, 0]),
+            np.nanmin(_boubox[:, 1]),
+            np.nanmax(_boubox[:, 1]),
+        )
+        # initialize the parent Region class
         super().__init__(bounding_box, crs)
 
         self.vector_data = vector_data
         self.minimum_mesh_size = minimum_mesh_size
 
-        self.boubox = _boubox
+        self.boubox = _boubox # polygon repr. of meshing region. CCW orientation.
         self.refinements = refinements
         self.minimum_area_mult = minimum_area_mult
 
@@ -614,7 +633,7 @@ class CoastalGeometry(Region):
             flg2 = True
 
         # Note that the boubox has to exist
-        (line3,) = ax.plot(self.boubox[:, 0], self.boubox[:, 1], "g--")
+        (line3,) = ax.plot(self.boubox[:, 0], self.boubox[:, 1], "g--", label='Meshing domain')
 
         xmin, xmax, ymin, ymax = self.bbox
         rect = plt.Rectangle(
@@ -624,7 +643,7 @@ class CoastalGeometry(Region):
             fill=None,
             hatch="////",
             alpha=0.2,
-            label="bounding box",
+            label="Region's extent",
         )
 
         border = 0.10 * (xmax - xmin)
