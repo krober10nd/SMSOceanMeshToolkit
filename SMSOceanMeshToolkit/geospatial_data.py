@@ -328,87 +328,69 @@ def convert_to_list_of_lists(data_list):
 
 class CoastalGeometry(Region):
     """
-    Class for reading in vector data from a vector file
-    and preparing it for use in oceanmesh.
+    Class for processing vector data from a file for ocean meshing, representing
+    coastal boundaries or shorelines.
 
     Parameters
     ----------
     vector_data : str or pathlib.Path
-        Path to vector file containing vector data typically representing
-        a shoreline or coastal boundary. Accepts all formats supported by geopandas.
-    bounding_box : tuple
-        Bounding box of the region of interest. The format is:
-        (xmin, xmax, ymin, ymax).
+        Path to the vector file containing coastal boundary data. 
+        Supports formats compatible with geopandas.
+    region_boundary : tuple or str or np.ndarray
+        Defines the region of interest. Can be a bounding box (tuple: xmin, xmax, ymin, ymax),
+        a shapefile path (str), or a polygon (numpy array).
     minimum_mesh_size : float
-        Minimum mesh size spacing in the coordinate reference system units.
+        The smallest allowable mesh size in the specified coordinate system units.
     crs : str, optional
-        Coordinate reference system (crs) of the vector file.
-        Default is 'EPSG:4326'.
+        Coordinate reference system of the vector file, default 'EPSG:4326'.
     smooth_shoreline : bool, optional
-        Smooth the shoreline using a corner cutting algorithm. Default is True.
-        See the following argument `refinements` for more details.
+        If True, apply a corner cutting algorithm to smooth the shoreline. Default is True.
     refinements : int, optional
-        Number of refinements to apply to the vector data. Default is 1.
+        Number of iterations for vector data refinement. Default is 1.
     minimum_area_mult : float, optional
-        Minimum area multiplier. Features with an area less than
-        minimum_mesh_size*minimum_area_mult are removed.
+        Factor for filtering small features; those smaller than 
+        minimum_mesh_size * minimum_area_mult are removed.
     """
 
-    def __init__(
-        self,
-        vector_data,
-        bounding_box,
-        minimum_mesh_size,
-        crs="EPSG:4326",
-        smooth_shoreline=True,
-        refinements=1,
-        minimum_area_mult=4.0,
-    ):
+    def __init__(self, vector_data, region_boundary, minimum_mesh_size, crs="EPSG:4326",
+                 smooth_shoreline=True, refinements=1, minimum_area_mult=4.0):
+        
         if isinstance(vector_data, str):
             vector_data = Path(vector_data)
-        # check if the vector data exists
         if not vector_data.exists():
-            raise FileNotFoundError(
-                errno.ENOENT, os.strerror(errno.ENOENT), vector_data
-            )
+            raise FileNotFoundError(errno.ENOENT, os.strerror(errno.ENOENT), vector_data)
 
-        if isinstance(bounding_box, tuple):
-            # form a bounding box polygon
-            _boubox = np.asarray(_create_boubox(bounding_box))
-        elif isinstance(bounding_box, np.ndarray):
-            # assume the bounding box is a polygon
-            _boubox = np.asarray(bounding_box)
-
-        elif isinstance(bounding_box, str): # then assume shapefile 
-            # try to read 
-            _boubox = gpd.read_file(bounding_box)
-            # only retain the first entry 
-            _boubox = _boubox.iloc[0].geometry
-            # ensure its a polygon 
-            if _boubox.geom_type != 'Polygon':
-                raise ValueError(f"Bounding box must be a polygon. Got {_boubox.geom_type} instead.")
-            # convert to numpy array
-            _boubox = np.asarray(_boubox.exterior.coords)
+        if isinstance(region_boundary, tuple):
+            _region_polygon = np.asarray(_create_boubox(region_boundary))
+        elif isinstance(region_boundary, np.ndarray):
+            _region_polygon = np.asarray(region_boundary)
+        elif isinstance(region_boundary, str):  # then assume shapefile
+            try:
+                _region_polygon = gpd.read_file(region_boundary)
+                _region_polygon = _region_polygon.iloc[0].geometry
+                if _region_polygon.geom_type != 'Polygon':
+                    raise ValueError(f"Region must be a polygon. Got {_region_polygon.geom_type} instead.")
+                _region_polygon = np.asarray(_region_polygon.exterior.coords)
+            except Exception as e:
+                raise ValueError(f"Could not read vector data from {region_boundary}. Got {e} instead.") 
         else: 
-            raise ValueError(f"Bounding box must be a tuple, numpy array, or shapefile. Got {type(bounding_box)} instead.")
+            raise ValueError(f"region_boundary must be a tuple, numpy array, or shapefile. Got {type(region_boundary)} instead.")
         
-         # ensure the polygon is ccw
-        if not _is_path_ccw(_boubox):
-            _boubox = np.flipud(_boubox)
-           
-        bounding_box = (
-            np.nanmin(_boubox[:, 0]),
-            np.nanmax(_boubox[:, 0]),
-            np.nanmin(_boubox[:, 1]),
-            np.nanmax(_boubox[:, 1]),
+        if not _is_path_ccw(_region_polygon):
+            _region_polygon = np.flipud(_region_polygon)
+
+        region_bbox = (
+            np.nanmin(_region_polygon[:, 0]),
+            np.nanmax(_region_polygon[:, 0]),
+            np.nanmin(_region_polygon[:, 1]),
+            np.nanmax(_region_polygon[:, 1]),
         )
-        # initialize the parent Region class
-        super().__init__(bounding_box, crs)
+
+        super().__init__(region_bbox, crs)
 
         self.vector_data = vector_data
         self.minimum_mesh_size = minimum_mesh_size
-
-        self.boubox = _boubox # polygon repr. of meshing region. CCW orientation.
+        self.region_polygon = _region_polygon
         self.refinements = refinements
         self.minimum_area_mult = minimum_area_mult
 
@@ -417,42 +399,32 @@ class CoastalGeometry(Region):
         self.outer = []
         self.mainland = []
 
-        # read in the vector data
         polys = self._read()
 
-        # optionally smooth the shoreline by cutting corners
         if smooth_shoreline:
             polys = _smooth_vector_data(polys, self.refinements)
 
-        # densify the vector data so that the minimum spacing along it is <= `minimum_mesh_size` / 2
-        polys = _densify(polys, self.minimum_mesh_size, self.bbox)
+        polys = _densify(polys, self.minimum_mesh_size, region_bbox)
+        polys = _clip_polys(polys, region_bbox)
 
-        # clip the vector data to the bounding box (which comes from the Region class)
-        polys = _clip_polys(polys, self.bbox)
-
-        # classify the vector data as inner, outer, or mainland based on how much
-        # of the bounding box it intersects
-        self.inner, self.mainland, self.boubox = _classify_shoreline(
-            self.bbox,
-            self.boubox,
-            polys,
-            self.minimum_mesh_size / 2,
-            self.minimum_area_mult,
+        self.inner, self.mainland, self.region_polygon = _classify_shoreline(
+            region_bbox, self.region_polygon, polys, 
+            self.minimum_mesh_size / 2, self.minimum_area_mult
         )
-
+        
     def __repr__(self):
-        outputs = []
-        outputs.append("\nCoastalGeometry object")
-        outputs.append(f"vector_data: {self.vector_data}")
-        outputs.append(f"bbox: {self.bbox}")
-        outputs.append(f"minimum_mesh_size: {self.minimum_mesh_size}")
-        outputs.append(f"minimum_area_mult: {self.minimum_area_mult}")
-        outputs.append(f"refinements: {self.refinements}")
-        # list the number of classified segments
-        outputs.append(f"inner: {len(self.inner)} nodes")
-        outputs.append(f"outer: {len(self.outer)} nodes")
-        outputs.append(f"mainland: {len(self.mainland)} nodes")
-        outputs.append(f"crs: {self.crs}")
+        outputs = [
+            "\nCoastalGeometry object",
+            f"Vector Data Path: {self.vector_data}",
+            f"Region Bounding Box: {self.region_bbox}",
+            f"Minimum Mesh Size: {self.minimum_mesh_size}",
+            f"Minimum Area Multiplier: {self.minimum_area_mult}",
+            f"Refinements: {self.refinements}",
+            f"Inner Nodes: {len(self.inner)}",
+            f"Outer Nodes: {len(self.outer)}",
+            f"Mainland Nodes: {len(self.mainland)}",
+            f"Coordinate Reference System: {self.crs}"
+        ]
         return "\n".join(outputs)
 
     @property
@@ -483,8 +455,7 @@ class CoastalGeometry(Region):
     def minimum_area_mult(self, value):
         if value <= 0.0:
             raise ValueError(
-                "Minimum area multiplier * minimum_mesh_size**2 to "
-                " prune polygons must be > 0"
+                "Minimum area multiplier * minimum_mesh_size**2 to prune polygons must be > 0"
             )
         self.__minimum_area_mult = value
 
@@ -495,8 +466,9 @@ class CoastalGeometry(Region):
     @minimum_mesh_size.setter
     def minimum_mesh_size(self, value):
         if value <= 0:
-            raise ValueError("minimum_mesh_size must be > 0")
+            raise ValueError("Minimum mesh size must be > 0")
         self.__minimum_mesh_size = value
+
 
     @staticmethod
     def transform_to(gdf, dst_crs):
@@ -514,11 +486,6 @@ class CoastalGeometry(Region):
         """
         Convert the processed vector data to a vector file
         """
-        # Package up the inner, outer, and mainland data into a geodataframe
-        # raise an error if the data is not processed yet
-        #if len(self.outer) == 0:
-        #    raise ValueError("Vector data has not been processed yet")
-        # where mainland has a row of nans separating each polygon
         # into a new sublist 
         mainland = convert_to_list_of_lists(self.mainland)
         inner = convert_to_list_of_lists(self.inner)
@@ -579,99 +546,62 @@ class CoastalGeometry(Region):
                 polys.append(np.row_stack((poly, delimiter)))
 
         if len(polys) == 0:
-            raise ValueError("Vector data does not intersect with bbox")
+            raise ValueError("Vector data does not intersect with region boundary")
 
         logger.debug("Exiting: _read")
 
         return _convert_to_array(polys)
 
-    def plot(
-        self,
-        ax=None,
-        xlabel=None,
-        ylabel=None,
-        title=None,
-        file_name=None,
-        show=True,
-    ):
+    def plot(self, ax=None, xlabel=None, ylabel=None, title=None, file_name=None, show=True):
         """
         Visualize the content in the classified vector fields of
         CoastalGeometry object.
-
-        Parameters
-        ----------
-        ax : matplotlib.axes.Axes, optional
-            Axes to plot on, otherwise uses current axes.
-        xlabel : str, optional
-            Label for the x-axis.
-        ylabel : str, optional
-            Label for the y-axis.
-        title : str, optional
-            Title for the plot.
-        file_name : str, optional
-            File name to save the figure to.
-        show : bool, optional
-            Show the figure.
-
-        Returns
-        -------
-        ax : matplotlib.axes.Axes
-            The axes object with the plot.
         """
-        flg1, flg2 = False, False
-
         if ax is None:
             fig, ax = plt.subplots()
             ax.axis("equal")
 
+        # Plotting mainland, inner, and region_polygon
         if len(self.mainland) != 0:
-            (line1,) = ax.plot(self.mainland[:, 0], self.mainland[:, 1], "k-")
-            flg1 = True
-
+            ax.plot(self.mainland[:, 0], self.mainland[:, 1], "k-", label='Mainland')
         if len(self.inner) != 0:
-            (line2,) = ax.plot(self.inner[:, 0], self.inner[:, 1], "r-")
-            flg2 = True
+            ax.plot(self.inner[:, 0], self.inner[:, 1], "r-", label='Inner')
+        ax.plot(self.region_polygon[:, 0], self.region_polygon[:, 1], "g--", label='Meshing Domain')
 
-        # Note that the boubox has to exist
-        (line3,) = ax.plot(self.boubox[:, 0], self.boubox[:, 1], "g--", label='Meshing domain')
+        # Creating a polygon from region_polygon
+        region_poly = shapely.geometry.Polygon(self.region_polygon)
 
-        xmin, xmax, ymin, ymax = self.bbox
-        rect = plt.Rectangle(
-            (xmin, ymin),
-            xmax - xmin,
-            ymax - ymin,
-            fill=None,
-            hatch="////",
-            alpha=0.2,
-            label="Region's extent",
-        )
+        # Assuming 'outer' is a numpy array representing the outer polygon
+        outer_poly = shapely.geometry.Polygon(self.outer)
 
+        # Finding the intersection area
+        intersection_poly = region_poly.intersection(outer_poly)
+
+        # Plotting the intersection area with hatching
+        if not intersection_poly.is_empty:
+            x, y = intersection_poly.exterior.xy
+            ax.fill(x, y, alpha=0.2, hatch='////', label="Intersection Area")
+
+        # Setting plot boundaries
+        xmin, xmax, ymin, ymax = self.region_bbox
         border = 0.10 * (xmax - xmin)
-        if ax is None:
-            plt.xlim(xmin - border, xmax + border)
-            plt.ylim(ymin - border, ymax + border)
+        ax.set_xlim(xmin - border, xmax + border)
+        ax.set_ylim(ymin - border, ymax + border)
 
-        ax.add_patch(rect)
-
-        if flg1 and flg2:
-            ax.legend((line1, line2, line3), ("mainland", "inner", "outer"))
-        elif flg1 and not flg2:
-            ax.legend((line1, line3), ("mainland", "outer"))
-        elif flg2 and not flg1:
-            ax.legend((line2, line3), ("inner", "outer"))
-
+        # Adding labels, title, and legend
         if xlabel is not None:
             ax.set_xlabel(xlabel)
         if ylabel is not None:
             ax.set_ylabel(ylabel)
         if title is not None:
             ax.set_title(title)
+        ax.legend()
 
         ax.set_aspect("equal", adjustable="box")
 
+        # Displaying or saving the plot
         if show:
             plt.show()
-
         if file_name is not None:
             plt.savefig(file_name, dpi=300, bbox_inches="tight")
 
