@@ -15,6 +15,7 @@ import numpy.linalg
 import shapely.geometry
 import shapely.validation
 from pyproj import CRS
+from scipy.ndimage import uniform_filter1d
 
 from .Region import Region
 
@@ -124,7 +125,7 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
     (3) `boubox` polygon array will be clipped by segments contained by `mainland`.
     """
     logger.debug("Entering:_classify_shoreline")
-
+        
     _AREAMIN = minimum_area_mult * h0**2
 
     if len(boubox) == 0:
@@ -158,7 +159,7 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
             if area >= _AREAMIN:
                 inner = np.append(inner, poly, axis=0)
         elif pSGP.overlaps(boxSGP):
-            bSGP = boxSGP.difference(pSGP)
+            bSGP = boxSGP.intersection(pSGP)
             #bSGP = boxSGP.symmetric_difference(pSGP)
             # Append polygon segment to mainland
             mainland = np.vstack((mainland, poly))
@@ -326,6 +327,50 @@ def convert_to_list_of_lists(data_list):
     return tmp
 
 
+def _smooth_vector_data_moving_window(segment, window):
+    logger.debug("Entering:_smooth_vector_data_moving_window")
+
+    def smooth_data(data, window_size):
+        return uniform_filter1d(data, size=window_size, mode='nearest')
+
+    closed = 1
+    isnan = np.where(np.isnan(segment[:, 0]))[0]
+    isnan = np.insert(isnan, 0, 0)
+
+    if len(isnan) == 1:
+        iseg = segment
+        if iseg[0, 0] == iseg[-1, 0]:
+            iseg = np.vstack([iseg[-(window//2):], iseg, iseg[:(window//2)]])
+            if len(iseg) > window:
+                iseg[:, 0] = smooth_data(iseg[:, 0], window)
+                iseg[:, 1] = smooth_data(iseg[:, 1], window)
+            segment = iseg[(window//2):-((window//2)+1)]
+            segment[-1] = segment[0]
+        else:
+            closed = 0
+            if len(iseg) > window:
+                segment[:, 0] = smooth_data(segment[:, 0], window)
+                segment[:, 1] = smooth_data(segment[:, 1], window)
+    else:
+        for i in range(len(isnan) - 1):
+            iseg = segment[(isnan[i]+1):isnan[i+1]]
+            if iseg.size > 0:
+                if iseg[0, 0] == iseg[-1, 0] and iseg[0, 1] == iseg[-1, 1]:
+                    iseg = np.vstack([iseg[-(window//2):], iseg, iseg[:(window//2)]])
+                    if len(iseg) > window:
+                        iseg[:, 0] = smooth_data(iseg[:, 0], window)
+                        iseg[:, 1] = smooth_data(iseg[:, 1], window)
+                    segment[(isnan[i]):isnan[i+1]] = iseg[(window//2):-((window//2)+1)]
+                    segment[isnan[i+1]] = segment[isnan[i]]
+                else:
+                    closed = 0
+                    if len(iseg) > window:
+                        segment[(isnan[i]+1):isnan[i+1], 0] = smooth_data(iseg[:, 0], window)
+                        segment[(isnan[i]+1):isnan[i+1], 1] = smooth_data(iseg[:, 1], window)
+    logger.debug("Exiting:_smooth_vector_data_moving_window")
+    return segment, closed
+
+
 class CoastalGeometry(Region):
     """
     Class for processing vector data from a file for ocean meshing, representing
@@ -345,15 +390,20 @@ class CoastalGeometry(Region):
         Coordinate reference system of the vector file, default 'EPSG:4326'.
     smooth_shoreline : bool, optional
         If True, apply a corner cutting algorithm to smooth the shoreline. Default is True.
+    smoothing_approach: str, optional
+        Approach to use for smoothing the shoreline. Default is 'chaikin' but can also 'moving_window'
+    smoothing_window: int, optional
+        Number of points to use for the moving window approach. Default is 5.
     refinements : int, optional
-        Number of iterations for vector data refinement. Default is 1.
+        Number of iterations for application of chaikin's algorithm. Default is 1.
     minimum_area_mult : float, optional
         Factor for filtering small features; those smaller than 
-        minimum_mesh_size * minimum_area_mult are removed.
+        minimum_mesh_size * minimum_area_mult are removed. 
     """
 
     def __init__(self, vector_data, region_boundary, minimum_mesh_size, crs="EPSG:4326",
-                 smooth_shoreline=True, refinements=1, minimum_area_mult=4.0):
+                 smooth_shoreline=True, smoothing_approach='chaikin', smoothing_window=5, 
+                 refinements=1, minimum_area_mult=4.0):
         
         if isinstance(vector_data, str):
             vector_data = Path(vector_data)
@@ -396,13 +446,17 @@ class CoastalGeometry(Region):
 
         # Initialize empty lists to store the processed vector data
         self.inner = []
-        self.outer = []
+        self.region_polygon = []
         self.mainland = []
 
         polys = self._read()
 
-        if smooth_shoreline:
+        if smooth_shoreline and smoothing_approach == 'chaikin':
             polys = _smooth_vector_data(polys, self.refinements)
+        elif smooth_shoreline and smoothing_approach == 'moving_window':
+            polys = _smooth_vector_data_moving_window(polys, smoothing_window)
+        elif smooth_shoreline and smoothing_approach not in ('chaikin', 'moving_window'):
+            raise ValueError(f"Unknown smoothing approach {smoothing_approach}. Must be 'chaikin' or 'moving_window'.")
 
         polys = _densify(polys, self.minimum_mesh_size, region_bbox)
         polys = _clip_polys(polys, region_bbox)
@@ -489,7 +543,7 @@ class CoastalGeometry(Region):
         # into a new sublist 
         mainland = convert_to_list_of_lists(self.mainland)
         inner = convert_to_list_of_lists(self.inner)
-        outer = convert_to_list_of_lists(self.outer)
+        outer = convert_to_list_of_lists(self.region_polygon)
 
         _tmp = []
         labels = []
@@ -564,26 +618,56 @@ class CoastalGeometry(Region):
         # Plotting mainland, inner, and region_polygon
         if len(self.mainland) != 0:
             ax.plot(self.mainland[:, 0], self.mainland[:, 1], "k-", label='Mainland')
+            
         if len(self.inner) != 0:
             ax.plot(self.inner[:, 0], self.inner[:, 1], "r-", label='Inner')
-        ax.plot(self.region_polygon[:, 0], self.region_polygon[:, 1], "g--", label='Meshing Domain')
+        
+        #ax.plot(self.region_polygon[:, 0], self.region_polygon[:, 1], "g--", label='Meshing Domain')
 
         # Creating a polygon from region_polygon
-        region_poly = shapely.geometry.Polygon(self.region_polygon)
+        region_poly = shapely.geometry.Polygon(self.region_polygon[:-1])
 
-        # Assuming 'outer' is a numpy array representing the outer polygon
-        outer_poly = shapely.geometry.Polygon(self.outer)
-
-        # Finding the intersection area
+        # combine mainland & any inner polygons into one multipolygon
+        if len(self.mainland) != 0:
+            _mainland = convert_to_list_of_lists(self.mainland)
+            
+        if len(self.inner) != 0:
+            _inner = convert_to_list_of_lists(self.inner)
+        
+        outer_poly = [] 
+        if len(self.mainland) != 0: 
+            for _main in _mainland:
+                outer_poly.append(shapely.geometry.Polygon(_main[:-1]))
+                
+        inner_poly = []
+        if len(self.inner) != 0:
+            for _inn in _inner:
+                inner_poly.append(shapely.geometry.Polygon(_inn[:-1]))
+                
+        # Creating a polygon from outer_poly
+        outer_poly = shapely.geometry.MultiPolygon(outer_poly)
+        
+        inner_poly = shapely.geometry.MultiPolygon(inner_poly)
+        
         intersection_poly = region_poly.intersection(outer_poly)
+        if not inner_poly.is_empty:
+            # difference out the islands 
+            print("difference out the islands")
+            intersection_poly = intersection_poly.intersect(inner_poly)
 
         # Plotting the intersection area with hatching
         if not intersection_poly.is_empty:
-            x, y = intersection_poly.exterior.xy
-            ax.fill(x, y, alpha=0.2, hatch='////', label="Intersection Area")
+            if intersection_poly.geom_type == "Polygon": 
+                x, y = intersection_poly.exterior.xy
+                ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
+            elif intersection_poly.geom_type == "MultiPolygon":
+                print("MultiPolygon")
+                for p in intersection_poly.geoms:
+                    x, y = p.exterior.xy
+                    ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
 
         # Setting plot boundaries
-        xmin, xmax, ymin, ymax = self.region_bbox
+        xmin, xmax, ymin, ymax = self.bbox
         border = 0.10 * (xmax - xmin)
         ax.set_xlim(xmin - border, xmax + border)
         ax.set_ylim(ymin - border, ymax + border)

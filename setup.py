@@ -9,7 +9,7 @@ setup(
     description="Tools for oceanmesh to interface with SMS",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
-    url="<url_to_package_repo>",
+    url="https://github.com/krober10nd/SMSOceanMeshToolkit",
     classifiers=[
         "Programming Language :: Python :: 3",
         "License :: OSI Approved :: GPLv3",
@@ -23,6 +23,7 @@ setup(
         'shapely',
         'matplotlib',
         'pyproj',
-        'fiona'
+        'fiona',
+        'scipy',
     ],
 )
