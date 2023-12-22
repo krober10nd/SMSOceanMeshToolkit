@@ -1,0 +1,11 @@
+{
+    "version": "2.0.0",
+    "tasks": [
+        {
+            "label": "pipInstall",
+            "type": "shell",
+            "command": "pip install -U .",
+            "problemMatcher": []
+        }
+    ]
+}

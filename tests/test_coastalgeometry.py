@@ -1,6 +1,6 @@
 import matplotlib.pyplot as plt
 import matplotlib
-#matplotlib.use('Agg')
+matplotlib.use('Agg')
 
 import SMSOceanMeshToolkit as smsom
 import logging
@@ -50,6 +50,7 @@ def test_bounding_polygon_with_moving_window_smoothing():
         plt.close()
 
 if __name__ == "__main__":
+    # for debugging
     test_bounding_box_with_different_mesh_sizes()
     #test_bounding_polygon_with_different_mesh_sizes()
     #test_bounding_polygon_with_moving_window_smoothing()

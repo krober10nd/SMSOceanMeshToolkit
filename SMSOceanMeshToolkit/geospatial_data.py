@@ -392,10 +392,12 @@ class CoastalGeometry(Region):
         If True, apply a corner cutting algorithm to smooth the shoreline. Default is True.
     smoothing_approach: str, optional
         Approach to use for smoothing the shoreline. Default is 'chaikin' but can also 'moving_window'
+        The chainkin approach smoothes out corners in the shoreline by applying Chaikin's corner cutting
+        The moving_window approach smoothes out the shoreline by applying a moving window average.
     smoothing_window: int, optional
         Number of points to use for the moving window approach. Default is 5.
     refinements : int, optional
-        Number of iterations for application of chaikin's algorithm. Default is 1.
+        Number of iterations for application of Chaikin's algorithm. Default is 1.
     minimum_area_mult : float, optional
         Factor for filtering small features; those smaller than 
         minimum_mesh_size * minimum_area_mult are removed. 
@@ -540,6 +542,7 @@ class CoastalGeometry(Region):
         """
         Convert the processed vector data to a vector file
         """
+        logger.debug("Entering: to_geodataframe")
         # into a new sublist 
         mainland = convert_to_list_of_lists(self.mainland)
         inner = convert_to_list_of_lists(self.inner)
@@ -559,10 +562,12 @@ class CoastalGeometry(Region):
         # Create a geodataframe
         gdf = gpd.GeoDataFrame(geometry=_tmp, crs=self.crs)
         gdf["labels"] = labels
+        logger.debug("Exiting: to_geodataframe")
         return gdf
 
     def _read(self):
-        """Reads a vector file from `filename` ∩ `bbox`
+        """
+        Reads a vector file from `filename` ∩ `bbox`
         using geopandas and returns a numpy array of
         the coordinates of the polygons in the file.
         """
@@ -573,7 +578,7 @@ class CoastalGeometry(Region):
         msg = f"Reading in vector file {self.vector_data}"
         logger.info(msg)
 
-        # transform if necessary
+        # transform if necessary 
         s = self.transform_to(gpd.read_file(self.vector_data), self.crs)
 
         # Explode to remove multipolygons or multi-linestrings (if present)
@@ -606,10 +611,25 @@ class CoastalGeometry(Region):
 
         return _convert_to_array(polys)
 
-    def plot(self, ax=None, xlabel=None, ylabel=None, title=None, file_name=None, show=True):
+    def plot(self, ax=None, xlabel=None, ylabel=None, title=None, filename=None, show=True):
         """
         Visualize the content in the classified vector fields of
         CoastalGeometry object.
+        
+        Parameters
+        ----------
+        ax : matplotlib.axes.Axes, optional
+            The axes to plot on. If not provided, a new figure will be created.
+        xlabel : str, optional
+            Label for the x-axis.
+        ylabel : str, optional
+            Label for the y-axis.
+        title : str, optional
+            Title for the plot.
+        filename : str, optional
+            Path to save the figure.
+        show : bool, optional
+        
         """
         if ax is None:
             fig, ax = plt.subplots()
@@ -622,6 +642,7 @@ class CoastalGeometry(Region):
         if len(self.inner) != 0:
             ax.plot(self.inner[:, 0], self.inner[:, 1], "r-", label='Inner')
         
+        # TODO: this will be hatched by evalulating the signed distance function
         #ax.plot(self.region_polygon[:, 0], self.region_polygon[:, 1], "g--", label='Meshing Domain')
 
         # Creating a polygon from region_polygon
@@ -634,37 +655,34 @@ class CoastalGeometry(Region):
         if len(self.inner) != 0:
             _inner = convert_to_list_of_lists(self.inner)
         
-        outer_poly = [] 
-        if len(self.mainland) != 0: 
-            for _main in _mainland:
-                outer_poly.append(shapely.geometry.Polygon(_main[:-1]))
-                
-        inner_poly = []
-        if len(self.inner) != 0:
-            for _inn in _inner:
-                inner_poly.append(shapely.geometry.Polygon(_inn[:-1]))
-                
-        # Creating a polygon from outer_poly
-        outer_poly = shapely.geometry.MultiPolygon(outer_poly)
+        # TODO:  use a signed distance funciton
+        #outer_poly = [] 
+        #if len(self.mainland) != 0: 
+        #    for _main in _mainland:
+        #        outer_poly.append(shapely.geometry.Polygon(_main[:-1]))
+        #        
+        #inner_poly = []
+        #if len(self.inner) != 0:
+        #    for _inn in _inner:
+        #        inner_poly.append(shapely.geometry.Polygon(_inn[:-1]))
+        #        
+        ## Creating a polygon from outer_poly
+        #outer_poly = shapely.geometry.MultiPolygon(outer_poly)
         
-        inner_poly = shapely.geometry.MultiPolygon(inner_poly)
+        #inner_poly = shapely.geometry.MultiPolygon(inner_poly)
         
-        intersection_poly = region_poly.intersection(outer_poly)
-        if not inner_poly.is_empty:
-            # difference out the islands 
-            print("difference out the islands")
-            intersection_poly = intersection_poly.intersect(inner_poly)
+        #intersection_poly = region_poly.intersection(outer_poly)
 
-        # Plotting the intersection area with hatching
-        if not intersection_poly.is_empty:
-            if intersection_poly.geom_type == "Polygon": 
-                x, y = intersection_poly.exterior.xy
-                ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
-            elif intersection_poly.geom_type == "MultiPolygon":
-                print("MultiPolygon")
-                for p in intersection_poly.geoms:
-                    x, y = p.exterior.xy
-                    ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
+        ## Plotting the intersection area with hatching
+        #if not intersection_poly.is_empty:
+        #    if intersection_poly.geom_type == "Polygon": 
+        #        x, y = intersection_poly.exterior.xy
+        #        ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
+        #    elif intersection_poly.geom_type == "MultiPolygon":
+        #        print("MultiPolygon")
+        #        for p in intersection_poly.geoms:
+        #            x, y = p.exterior.xy
+        #            ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
 
         # Setting plot boundaries
         xmin, xmax, ymin, ymax = self.bbox
@@ -686,7 +704,7 @@ class CoastalGeometry(Region):
         # Displaying or saving the plot
         if show:
             plt.show()
-        if file_name is not None:
-            plt.savefig(file_name, dpi=300, bbox_inches="tight")
+        if filename is not None:
+            plt.savefig(filename, dpi=300, bbox_inches="tight")
 
         return ax

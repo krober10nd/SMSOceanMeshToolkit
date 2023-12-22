@@ -25,5 +25,6 @@ setup(
         'pyproj',
         'fiona',
         'scipy',
+        'inpoly @ git+https://github.com/dengwirda/inpoly-python.git',
     ],
 )
