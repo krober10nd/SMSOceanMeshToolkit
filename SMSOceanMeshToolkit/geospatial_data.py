@@ -15,7 +15,6 @@ import numpy.linalg
 import shapely.geometry
 import shapely.validation
 from pyproj import CRS
-from scipy.ndimage import uniform_filter1d
 
 from .Region import Region
 
@@ -321,54 +320,45 @@ def convert_to_list_of_lists(data_list):
         tmp =  [list(group) for group in np.split(data_list, np.unique(np.where(np.isnan(data_list))[0])) if len(group) > 0]
     else:
         tmp =  [list(group) for group in np.split(data_list, np.unique(np.where(np.isnan(data_list))[0]+1)) if len(group) > 0]
-    tmp = [np.vstack(d) for d in tmp]
-    # drop the trailing NaN
-    tmp = tmp[:-1]
+    tmp = [np.vstack(d)[:-1] for d in tmp]
     return tmp
 
+def _smooth_vector_data_moving_avg(polygons, window_size):
+    ''' 
+    Move each coordinate in the polygon to the average of its neigbhors 
+    +- window_size.
+    '''
+    if window_size % 2 == 0:
+        raise ValueError("Window size must be odd")
+   
+    if not isinstance(polygons, list):
+        polygons = convert_to_list_of_lists(polygons)
 
-def _smooth_vector_data_moving_window(segment, window):
-    logger.debug("Entering:_smooth_vector_data_moving_window")
 
-    def smooth_data(data, window_size):
-        return uniform_filter1d(data, size=window_size, mode='nearest')
+    out = []
+    for polygon in polygons: 
 
-    closed = 1
-    isnan = np.where(np.isnan(segment[:, 0]))[0]
-    isnan = np.insert(isnan, 0, 0)
+        exterior_coords = polygon 
+    
+        # Initialize smoothed_coords with the original start and end points
+        smoothed_coords = exterior_coords[:window_size // 2].tolist()
 
-    if len(isnan) == 1:
-        iseg = segment
-        if iseg[0, 0] == iseg[-1, 0]:
-            iseg = np.vstack([iseg[-(window//2):], iseg, iseg[:(window//2)]])
-            if len(iseg) > window:
-                iseg[:, 0] = smooth_data(iseg[:, 0], window)
-                iseg[:, 1] = smooth_data(iseg[:, 1], window)
-            segment = iseg[(window//2):-((window//2)+1)]
-            segment[-1] = segment[0]
-        else:
-            closed = 0
-            if len(iseg) > window:
-                segment[:, 0] = smooth_data(segment[:, 0], window)
-                segment[:, 1] = smooth_data(segment[:, 1], window)
-    else:
-        for i in range(len(isnan) - 1):
-            iseg = segment[(isnan[i]+1):isnan[i+1]]
-            if iseg.size > 0:
-                if iseg[0, 0] == iseg[-1, 0] and iseg[0, 1] == iseg[-1, 1]:
-                    iseg = np.vstack([iseg[-(window//2):], iseg, iseg[:(window//2)]])
-                    if len(iseg) > window:
-                        iseg[:, 0] = smooth_data(iseg[:, 0], window)
-                        iseg[:, 1] = smooth_data(iseg[:, 1], window)
-                    segment[(isnan[i]):isnan[i+1]] = iseg[(window//2):-((window//2)+1)]
-                    segment[isnan[i+1]] = segment[isnan[i]]
-                else:
-                    closed = 0
-                    if len(iseg) > window:
-                        segment[(isnan[i]+1):isnan[i+1], 0] = smooth_data(iseg[:, 0], window)
-                        segment[(isnan[i]+1):isnan[i+1], 1] = smooth_data(iseg[:, 1], window)
-    logger.debug("Exiting:_smooth_vector_data_moving_window")
-    return segment, closed
+        # Applying moving average to the interior points
+        for i in range(window_size // 2, len(exterior_coords) - window_size // 2):
+            window = exterior_coords[i - window_size // 2:i + window_size // 2 + 1]
+            mean_coord = window.mean(axis=0)
+            smoothed_coords.append(mean_coord.tolist())
+
+        # Append the original end points
+        smoothed_coords += exterior_coords[-(window_size // 2):].tolist()
+    
+        # Creating a new smoothed polygon
+        smoothed_coords = np.vstack(smoothed_coords)
+        out.append(smoothed_coords) 
+   
+    smoothed_polygons =  _convert_to_array(out)
+    return smoothed_polygons
+
 
 
 class CoastalGeometry(Region):
@@ -392,10 +382,10 @@ class CoastalGeometry(Region):
         If True, apply a corner cutting algorithm to smooth the shoreline. Default is True.
     smoothing_approach: str, optional
         Approach to use for smoothing the shoreline. Default is 'chaikin' but can also 'moving_window'
-        The chainkin approach smoothes out corners in the shoreline by applying Chaikin's corner cutting
+        The chaikin approach smoothes out corners in the shoreline by applying Chaikin's corner cutting
         The moving_window approach smoothes out the shoreline by applying a moving window average.
     smoothing_window: int, optional
-        Number of points to use for the moving window approach. Default is 5.
+        Number of points to use for the moving window approach. Default is 5. Must be odd. 
     refinements : int, optional
         Number of iterations for application of Chaikin's algorithm. Default is 1.
     minimum_area_mult : float, optional
@@ -404,7 +394,7 @@ class CoastalGeometry(Region):
     """
 
     def __init__(self, vector_data, region_boundary, minimum_mesh_size, crs="EPSG:4326",
-                 smooth_shoreline=True, smoothing_approach='chaikin', smoothing_window=5, 
+                 smooth_shoreline=True, smoothing_approach='chaikin', smoothing_window=0, 
                  refinements=1, minimum_area_mult=4.0):
         
         if isinstance(vector_data, str):
@@ -443,6 +433,8 @@ class CoastalGeometry(Region):
         self.vector_data = vector_data
         self.minimum_mesh_size = minimum_mesh_size
         self.region_polygon = _region_polygon
+        self.smoothing_approach = smoothing_approach
+        self.smoothing_window = smoothing_window
         self.refinements = refinements
         self.minimum_area_mult = minimum_area_mult
 
@@ -456,9 +448,9 @@ class CoastalGeometry(Region):
         if smooth_shoreline and smoothing_approach == 'chaikin':
             polys = _smooth_vector_data(polys, self.refinements)
         elif smooth_shoreline and smoothing_approach == 'moving_window':
-            polys = _smooth_vector_data_moving_window(polys, smoothing_window)
+            polys = _smooth_vector_data_moving_avg(polys, self.smoothing_window)
         elif smooth_shoreline and smoothing_approach not in ('chaikin', 'moving_window'):
-            raise ValueError(f"Unknown smoothing approach {smoothing_approach}. Must be 'chaikin' or 'moving_window'.")
+            raise ValueError(f"Unknown smoothing approach {self.smoothing_approach}. Must be 'chaikin' or 'moving_window'.")
 
         polys = _densify(polys, self.minimum_mesh_size, region_bbox)
         polys = _clip_polys(polys, region_bbox)
@@ -467,19 +459,38 @@ class CoastalGeometry(Region):
             region_bbox, self.region_polygon, polys, 
             self.minimum_mesh_size / 2, self.minimum_area_mult
         )
+
+    def save_meta_data(self, filename):
+        ''' 
+        Write the meta data about the processed vector data to a text file
+        '''
+        with open(filename, 'w') as f:
+            f.write(self.__repr__())
         
     def __repr__(self):
+        # count the number of polygons 
+        if len(self.mainland) != 0:
+            number_of_mainland = len(convert_to_list_of_lists(self.mainland))
+            
+        if len(self.inner) != 0:
+            number_of_inner = _inner = len(convert_to_list_of_lists(self.inner))
+        
         outputs = [
             "\nCoastalGeometry object",
             f"Vector Data Path: {self.vector_data}",
-            f"Region Bounding Box: {self.region_bbox}",
+            f"Coordinate Reference System: {self.crs}",
+            f"Units: {self.units}",
+            f"Region Bounding Box: {self.bbox}",
             f"Minimum Mesh Size: {self.minimum_mesh_size}",
             f"Minimum Area Multiplier: {self.minimum_area_mult}",
-            f"Refinements: {self.refinements}",
-            f"Inner Nodes: {len(self.inner)}",
-            f"Outer Nodes: {len(self.outer)}",
-            f"Mainland Nodes: {len(self.mainland)}",
-            f"Coordinate Reference System: {self.crs}"
+            f"Minimum Area: {self.minimum_mesh_size * self.minimum_area_mult} sq. {self.units}",
+            f"Smoothing Approach: {self.smoothing_approach}",
+            f"Smoothing Window: {self.smoothing_window}",
+            f"# of Corner Cuts: {self.refinements}",
+            f"# of Inner Nodes: {len(self.inner)}",
+            f"# of Inner Polygons: {number_of_inner}",
+            f"# of Mainland Nodes: {len(self.mainland)}",
+            f"# of Mainland Polygons: {number_of_mainland}",
         ]
         return "\n".join(outputs)
 

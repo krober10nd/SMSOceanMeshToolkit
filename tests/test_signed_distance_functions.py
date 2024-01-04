@@ -1,5 +1,6 @@
 import sys, logging
 import matplotlib.pyplot as plt
+import geopandas as gpd
 
 import SMSOceanMeshToolkit as smsom
 
@@ -13,10 +14,23 @@ def test_signed_distance_functions():
         shoreline = smsom.CoastalGeometry(
             vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
         )
-        smsom.signed_distance_function(shoreline)
+        print(shoreline)
+        sdf = smsom.signed_distance_function(shoreline)
+        sdf.plot()
 
-    pass 
+def test_signed_distance_functions_from_gpkg(): 
+    bounding_box = (-83.22137037, -82.5754578, 41.32025057, 41.89550398)
+    for minimum_mesh_size in (1000.0 / 111e3, 500.0 / 111e3, 100.0 / 111e3, 50.0 / 111e3):
+        shoreline = smsom.CoastalGeometry(
+            vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
+        )
+        gdf=shoreline.to_geodataframe()
+        print(gdf)
+        sdf = smsom.signed_distance_function(gdf)
+        ax=sdf.plot()
+        shoreline.plot(ax=ax)
 
 if __name__ == "__main__":
     # for debugging
     test_signed_distance_functions()
+    #test_signed_distance_functions_from_gpkg()

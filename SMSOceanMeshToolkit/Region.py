@@ -1,5 +1,10 @@
 import numpy as np
 from pyproj import Transformer
+from pyproj import CRS
+
+def get_crs_units(crs_input):
+    crs = CRS(crs_input)
+    return crs.axis_info[0].unit_name
 
 __all__ = ["Region", "warp_coordinates"]
 
@@ -14,7 +19,13 @@ class Region:
         '''
         self.bbox = extent
         self._crs = crs
+        # given the crs determine the units 
+        self._units = get_crs_units(crs)
 
+    @property
+    def units(self):
+        return self._units
+        
     @property
     def crs(self):
         return self._crs

@@ -46,11 +46,12 @@ def test_bounding_polygon_with_moving_window_smoothing():
         )
         shoreline.plot()
         gdf = shoreline.to_geodataframe()
+        #gdf.to_file("smoothed.shp")
         assert isinstance(gdf, gpd.GeoDataFrame)
         plt.close()
 
 if __name__ == "__main__":
     # for debugging
-    test_bounding_box_with_different_mesh_sizes()
+    #test_bounding_box_with_different_mesh_sizes()
     #test_bounding_polygon_with_different_mesh_sizes()
-    #test_bounding_polygon_with_moving_window_smoothing()
+    test_bounding_polygon_with_moving_window_smoothing()
