@@ -25,6 +25,7 @@ setup(
         'pyproj',
         'fiona',
         'scipy',
+        'xarray',
         'inpoly @ git+https://github.com/dengwirda/inpoly-python.git@v0.1.2',
     ],
 )

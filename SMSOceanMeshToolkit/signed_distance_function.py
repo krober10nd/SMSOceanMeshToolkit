@@ -7,6 +7,7 @@ import matplotlib.colors as mcolors
 import numpy as np
 import scipy.spatial
 from inpoly import inpoly2
+import xarray as xr
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 from .geospatial_data import CoastalGeometry, _create_boubox
@@ -71,6 +72,28 @@ def _generate_samples(bbox, N):
     points = np.asarray(points)
     points = points.reshape(-1, 2)
     return points
+
+def to_xarray(geo, grid_size=100): 
+    '''
+    Evaluate the signed distance function on a grid and return an xarray dataset
+    '''
+    x_min, x_max, y_min, y_max = geo.bbox
+    x_grid = np.linspace(x_min, x_max, grid_size)
+    y_grid = np.linspace(y_min, y_max, grid_size)
+    x_mesh, y_mesh = np.meshgrid(x_grid, y_grid)
+    # Evaluate SDF on grid and determine interior points
+    signed_distance = geo.eval(np.vstack((x_mesh.ravel(), y_mesh.ravel())).T).reshape(x_mesh.shape) 
+    # package the data into an xarray dataset
+    ds = xr.Dataset(
+        {
+            "signed_distance": (["y", "x"], signed_distance),
+        },
+        coords={
+            "x": x_grid,
+            "y": y_grid,
+        },
+    )
+    return ds
  
 def _plot(geo, grid_size=100):
     # Assuming _generate_samples and geo.eval are defined elsewhere
@@ -133,6 +156,30 @@ class Domain:
     def plot(self, grid_size=100):
         ax = _plot(self, grid_size=grid_size)
         return ax
+    
+    @staticmethod
+    def to_xarray(self, grid_size=100): 
+        '''
+        Evaluate the signed distance function on a grid and return an xarray dataset
+        '''
+        x_min, x_max, y_min, y_max = self.bbox
+        x_grid = np.linspace(x_min, x_max, grid_size)
+        y_grid = np.linspace(y_min, y_max, grid_size)
+        x_mesh, y_mesh = np.meshgrid(x_grid, y_grid)
+        # Evaluate SDF on grid and determine interior points
+        signed_distance = self.eval(np.vstack((x_mesh.ravel(), y_mesh.ravel())).T).reshape(x_mesh.shape) 
+        # package the data into an xarray dataset
+        ds = xr.Dataset(
+            {
+                "signed_distance": (["y", "x"], signed_distance),
+            },
+            coords={
+                "x": x_grid,
+                "y": y_grid,
+            },
+        )
+        return ds
+ 
  
 def polygons_to_numpy(gdf):
    coords_list = []

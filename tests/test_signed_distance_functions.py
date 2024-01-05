@@ -27,10 +27,12 @@ def test_signed_distance_functions_from_gpkg():
         gdf=shoreline.to_geodataframe()
         print(gdf)
         sdf = smsom.signed_distance_function(gdf)
+        ds = sdf.to_xarray(sdf)
+        ds.to_netcdf("sdf.nc")
         ax=sdf.plot()
         shoreline.plot(ax=ax)
 
 if __name__ == "__main__":
     # for debugging
-    test_signed_distance_functions()
-    #test_signed_distance_functions_from_gpkg()
+    #test_signed_distance_functions()
+    test_signed_distance_functions_from_gpkg()
