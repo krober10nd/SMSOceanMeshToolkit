@@ -1,6 +1,4 @@
 import sys, logging
-import matplotlib.pyplot as plt
-import geopandas as gpd
 
 import SMSOceanMeshToolkit as smsom
 

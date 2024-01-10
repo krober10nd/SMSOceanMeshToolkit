@@ -354,11 +354,12 @@ def _smooth_vector_data_moving_avg(polygons, window_size):
     
         # Creating a new smoothed polygon
         smoothed_coords = np.vstack(smoothed_coords)
+        # append a row of nans to the end of the smoothed_coords
+        smoothed_coords = np.vstack((smoothed_coords, [np.nan, np.nan]))
         out.append(smoothed_coords) 
    
     smoothed_polygons =  _convert_to_array(out)
     return smoothed_polygons
-
 
 
 class CoastalGeometry(Region):
@@ -445,6 +446,8 @@ class CoastalGeometry(Region):
 
         polys = self._read()
 
+        polys = _densify(polys, self.minimum_mesh_size, region_bbox)
+
         if smooth_shoreline and smoothing_approach == 'chaikin':
             polys = _smooth_vector_data(polys, self.refinements)
         elif smooth_shoreline and smoothing_approach == 'moving_window':
@@ -452,7 +455,6 @@ class CoastalGeometry(Region):
         elif smooth_shoreline and smoothing_approach not in ('chaikin', 'moving_window'):
             raise ValueError(f"Unknown smoothing approach {self.smoothing_approach}. Must be 'chaikin' or 'moving_window'.")
 
-        polys = _densify(polys, self.minimum_mesh_size, region_bbox)
         polys = _clip_polys(polys, region_bbox)
 
         self.inner, self.mainland, self.region_polygon = _classify_shoreline(
