@@ -4,6 +4,7 @@ import matplotlib.pyplot as plt
 import numpy as np
 import scipy.spatial
 from scipy.interpolate import RegularGridInterpolator
+import xarray as xr 
 
 from .Region import Region
 
@@ -54,6 +55,7 @@ class Grid(Region):
         dy=None,
         values=np.nan,
         extrapolate=False,
+        eval=None
     ):
         super().__init__(region.bbox, region.crs)
         self.dx = (
@@ -163,7 +165,7 @@ class Grid(Region):
 
         """
         x, y = self.create_vectors()
-        xg, yg = np.meshgrid(x, y, indexing="xy")
+        xg, yg = np.meshgrid(x, y, indexing="ij")
         return xg, yg
 
     def find_indices(self, points, x, y, tree=None, k=1):
@@ -295,8 +297,8 @@ class Grid(Region):
             fig, ax = plt.subplots()
             ax.axis("equal")
         pc = ax.pcolor(
-            _xg[::coarsen, ::coarsen].T,
-            _yg[::coarsen, ::coarsen].T,
+            _xg[::coarsen, ::coarsen],
+            _yg[::coarsen, ::coarsen],
             self.values[::coarsen, ::coarsen],
             **kwargs,
         )
@@ -333,6 +335,7 @@ class Grid(Region):
 
         if cbarlabel is not None:
             plot_colorbar = True
+            
         if plot_colorbar or cbarlabel:
             cbar = fig.colorbar(pc)
             cbar.set_label(cbarlabel)
@@ -375,3 +378,30 @@ class Grid(Region):
         self.eval = sizing_function
 
         return self
+
+    def to_xarray(self):
+        """
+        Convert a :obj:`Grid` object to an xarray dataset
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        ds: :obj:`xarray.Dataset`
+            An xarray dataset with the grid values
+
+        """
+        x, y = self.create_vectors()
+        xg, yg = self.create_grid()
+        ds = xr.Dataset(
+            {
+                "values": (["x", "y"], self.values),
+            },
+            coords={
+                "x": x,
+                "y": y,
+            },
+        )
+        return ds

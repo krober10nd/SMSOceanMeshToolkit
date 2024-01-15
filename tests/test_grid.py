@@ -6,12 +6,13 @@ def test_irregular_grid():
     '''
     Builds a Grid object for testing
     '''
-    region = Region((-10.352, 10., -10.2, 10.), 'EPSG:4326')
-    grid = Grid(region, dx=1.0, dy=2.0)
+    region = Region((-20.352, 10., -10.2, 10.), 'EPSG:4326')
+    grid = Grid(region, dx=1.0, dy=2.0, values=1.2)
     print(grid)
-    grid.plot(filename='test_irregular_grid.png')
+    ds = grid.to_xarray()
+    print(ds)
+    grid.plot(filename='test_irregular_grid.png', plot_colorbar=True)
     
-
 
 def test_regular_grid(): 
     '''Builds a Grid object for testing'''

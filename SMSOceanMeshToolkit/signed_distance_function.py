@@ -1,5 +1,4 @@
 import logging
-import random
  
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
@@ -12,11 +11,12 @@ from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 from .geospatial_data import CoastalGeometry, _create_boubox
 import geopandas as gpd
- 
+
 logger = logging.getLogger(__name__)
  
 __all__ = [
     "signed_distance_function",
+    "SDFDomain",
 ]
  
 nan = np.nan
@@ -53,47 +53,7 @@ def get_poly_edges(poly):
         tmp = np.append(tmp, [[ix_end, ix_start]], axis=0)
         edges.append(tmp)
     return np.concatenate(edges, axis=0)
- 
- 
-def _generate_samples(bbox, N):
-    N = int(N)
-    points = []
-    _xrange = (bbox[0] - 0.01, bbox[1] + 0.01)
-    _yrange = (bbox[2] - 0.01, bbox[3] + 0.01)
-    points.append(
-        [
-            (
-                random.uniform(*_xrange),
-                random.uniform(*_yrange),
-            )
-            for i in range(N)
-        ]
-    )
-    points = np.asarray(points)
-    points = points.reshape(-1, 2)
-    return points
 
-def to_xarray(geo, grid_size=100): 
-    '''
-    Evaluate the signed distance function on a grid and return an xarray dataset
-    '''
-    x_min, x_max, y_min, y_max = geo.bbox
-    x_grid = np.linspace(x_min, x_max, grid_size)
-    y_grid = np.linspace(y_min, y_max, grid_size)
-    x_mesh, y_mesh = np.meshgrid(x_grid, y_grid)
-    # Evaluate SDF on grid and determine interior points
-    signed_distance = geo.eval(np.vstack((x_mesh.ravel(), y_mesh.ravel())).T).reshape(x_mesh.shape) 
-    # package the data into an xarray dataset
-    ds = xr.Dataset(
-        {
-            "signed_distance": (["y", "x"], signed_distance),
-        },
-        coords={
-            "x": x_grid,
-            "y": y_grid,
-        },
-    )
-    return ds
  
 def _plot(geo, grid_size=100):
     # Assuming _generate_samples and geo.eval are defined elsewhere
@@ -144,7 +104,7 @@ def _plot(geo, grid_size=100):
     return ax
  
  
-class Domain:
+class SDFDomain:
     def __init__(self, bbox, func, covering=None):
         self.bbox = bbox
         self.domain = func
@@ -293,4 +253,4 @@ def signed_distance_function(coastal_geometry, invert=False):
         dist = (-1) ** (in_boubox) * d
         return dist
  
-    return Domain(bbox, func, covering=func_covering)
+    return SDFDomain(bbox, func, covering=func_covering)
