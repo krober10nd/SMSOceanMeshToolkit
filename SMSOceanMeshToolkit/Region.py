@@ -49,6 +49,8 @@ class Region:
                 raise ValueError("bbox must have four values.")
             if any(value[i] >= value[i + 1] for i in (0, 2)):
                 raise ValueError("bbox values are not in the correct order.")
+        elif isinstance(value, np.ndarray):
+            pass 
         self.__bbox = value
 
     def transform_to(self, dst_crs):
