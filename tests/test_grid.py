@@ -12,6 +12,18 @@ def test_irregular_grid():
     ds = grid.to_xarray()
     print(ds)
     grid.plot(filename='test_irregular_grid.png', plot_colorbar=True)
+
+def test_interpolate_onto(): 
+    '''
+    Given two grids that are overlapping, interpolate the values from one grid onto the other
+    '''
+    region1 = Region((-20.352, 10., -10.2, 10.), 'EPSG:4326')
+    region2 = Region((-10., 5., -5., 5.), 'EPSG:4326')
+    grid1 = Grid(region1, dx=1.0, dy=2.0, values=1.2)
+    grid2 = Grid(region2, dx=0.5, dy=0.5, values=2.2)
+    # will put grid2 onto grid1
+    grid3 = grid2.interpolate_onto(grid1)
+    grid3.plot(filename='test_interpolate_onto.png', plot_colorbar=True)
     
 
 def test_regular_grid(): 
@@ -37,4 +49,5 @@ def test_regular_grid():
      
 if __name__ == '__main__':
     #test_regular_grid()
-    test_irregular_grid()
+    #test_irregular_grid()
+    test_interpolate_onto()
