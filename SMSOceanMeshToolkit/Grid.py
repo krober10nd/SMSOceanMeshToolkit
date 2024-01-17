@@ -346,6 +346,7 @@ class Grid(Region):
             plt.savefig(filename)
         if holding is False:
             plt.show()
+            
         return fig, ax, pc
 
     def build_interpolant(self):
