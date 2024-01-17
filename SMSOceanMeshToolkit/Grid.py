@@ -75,11 +75,10 @@ class Grid(Region):
         self.nx = len(_xvec)
         self.ny = len(_yvec)
         
-        self.values = values  # Set values last, as it depends on dx, dy
+        self.values = values # see setter method 
 
         self.eval = eval
 
-    # create a __repr__ method 
     def __repr__(self):
        return f"bbox={self.bbox}, dx={self.dx}, dy={self.dy}, crs={self.crs}), units={self.units}"
 
@@ -309,7 +308,7 @@ class Grid(Region):
         ax.text(
             0.95,
             0.95,
-            f"dx={self.dx:.2f}, dy={self.dy:.2f}, x0y0={self.x0y0}, units={self.units}",
+            f"dx={self.dx:.4f}, dy={self.dy:.4f}, x0y0={self.x0y0}, units={self.units}",
             horizontalalignment="right",
             verticalalignment="top",
             transform=ax.transAxes,
