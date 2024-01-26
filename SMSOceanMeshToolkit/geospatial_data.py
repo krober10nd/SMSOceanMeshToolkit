@@ -117,11 +117,14 @@ def _densify(poly, maxdiff, bbox, radius=0.0):
 
 
 def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
-    """Classify segments in numpy.array `polys` as either `inner` or `mainland`.
+    """
+    Classify segments in numpy.array `polys` as either `inner` or `mainland`.
+
     (1) The `mainland` category contains segments that are not totally enclosed inside the `bbox`.
     (2) The `inner` (i.e., islands) category contains segments totally enclosed inside the `bbox`.
         NB: Removes `inner` geometry with area < `minimum_area_mult`*`h0`**2
     (3) `boubox` polygon array will be clipped by segments contained by `mainland`.
+
     """
     logger.debug("Entering:_classify_shoreline")
         
@@ -151,19 +154,47 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
     polyL = _convert_to_list(polys)
     boxSGP = shapely.geometry.Polygon(boubox)
 
+    inner_polygons = [] 
     for poly in polyL:
         pSGP = shapely.geometry.Polygon(poly[:-2, :])
         if boxSGP.contains(pSGP):
+            # fully contained within the domain so an inner island
             area = pSGP.area
             if area >= _AREAMIN:
                 inner = np.append(inner, poly, axis=0)
+                inner_polygons.append(pSGP)
         elif pSGP.overlaps(boxSGP):
+            # polygon partially enclosed by the domain so a mainland polygon. 
+            # only keep the part hat is inside the domain
             bSGP = boxSGP.intersection(pSGP)
-            #bSGP = boxSGP.symmetric_difference(pSGP)
             # Append polygon segment to mainland
             mainland = np.vstack((mainland, poly))
-            # Clip polygon segment from boubox and regenerate path
-
+    
+    # if bSGP is empty, then it must be equal to the largest inner polygon by area 
+    # check if bSGP exists
+    if 'bSGP' not in locals():
+        # determine the largest inner polygon by area
+        largest_inner_polygon = max(inner_polygons, key=lambda a: a.area)
+        # determine the index of the largest inner polygon
+        index_of_largest_inner_polygon = inner_polygons.index(largest_inner_polygon)
+        # remove the largest inner polygon from the inner polygons list
+        inner_polygons.pop(index_of_largest_inner_polygon)
+        # recreate the inner polygons as a nan-delimited numpy array
+        inner = np.empty(shape=(0, 2))
+        inner[:] = nan
+        for inner_polygon in inner_polygons:
+            xy = np.asarray(inner_polygon.exterior.coords)
+            xy = np.vstack((xy, xy[0]))
+            inner = np.vstack((inner, xy, [nan, nan]))
+        # this now becomes the bSGP 
+        bSGP = largest_inner_polygon
+        # get coordinates of this polygon
+        xy = np.asarray(bSGP.exterior.coords)
+        # set equal to mainland 
+        mainland = xy
+        # append a row of nans 
+        mainland = np.vstack((mainland, [np.nan, np.nan]))
+        
     out = np.empty(shape=(0, 2))
 
     if bSGP.geom_type == "Polygon":
@@ -179,6 +210,71 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
     logger.debug("Exiting:classify_shoreline")
 
     return inner, mainland, out
+
+
+#def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
+#    """Classify segments in numpy.array `polys` as either `inner` or `mainland`.
+#    (1) The `mainland` category contains segments that are not totally enclosed inside the `bbox`.
+#    (2) The `inner` (i.e., islands) category contains segments totally enclosed inside the `bbox`.
+#        NB: Removes `inner` geometry with area < `minimum_area_mult`*`h0`**2
+#    (3) `boubox` polygon array will be clipped by segments contained by `mainland`.
+#    """
+#    logger.debug("Entering:_classify_shoreline")
+#        
+#    _AREAMIN = minimum_area_mult * h0**2
+#
+#    if len(boubox) == 0:
+#        # if it's empty, create a boubox from the bbox
+#        boubox = _create_boubox(bbox)
+#        boubox = np.asarray(boubox)
+#    elif not _is_path_ccw(boubox):
+#        boubox = np.flipud(boubox)
+#
+#    # Densify boubox to ensure that the minimum spacing along it is <= `h0` / 2
+#    boubox = _densify(boubox, h0 / 2, bbox, radius=0.1)
+#
+#    # Remove nan's (append again at end)
+#    isNaN = np.sum(np.isnan(boubox), axis=1) > 0
+#    if any(isNaN):
+#        boubox = np.delete(boubox, isNaN, axis=0)
+#    del isNaN
+#
+#    inner = np.empty(shape=(0, 2))
+#    inner[:] = nan
+#    mainland = np.empty(shape=(0, 2))
+#    mainland[:] = nan
+#
+#    polyL = _convert_to_list(polys)
+#    boxSGP = shapely.geometry.Polygon(boubox)
+#
+#    for poly in polyL:
+#        pSGP = shapely.geometry.Polygon(poly[:-2, :])
+#        if boxSGP.contains(pSGP):
+#            area = pSGP.area
+#            if area >= _AREAMIN:
+#                inner = np.append(inner, poly, axis=0)
+#        elif pSGP.overlaps(boxSGP):
+#            bSGP = boxSGP.intersection(pSGP)
+#            #bSGP = boxSGP.symmetric_difference(pSGP)
+#            # Append polygon segment to mainland
+#            mainland = np.vstack((mainland, poly))
+#            # Clip polygon segment from boubox and regenerate path
+#
+#    out = np.empty(shape=(0, 2))
+#
+#    if bSGP.geom_type == "Polygon":
+#        # Convert to `MultiPolygon`
+#        bSGP = shapely.geometry.MultiPolygon([bSGP])
+#
+#    # MultiPolygon members can be accessed via iterator protocol using `in` loop.
+#    for b in bSGP.geoms:
+#        xy = np.asarray(b.exterior.coords)
+#        xy = np.vstack((xy, xy[0]))
+#        out = np.vstack((out, xy, [nan, nan]))
+#
+#    logger.debug("Exiting:classify_shoreline")
+#
+#    return inner, mainland, out
 
 
 def _chaikins_corner_cutting(coords, refinements=5):

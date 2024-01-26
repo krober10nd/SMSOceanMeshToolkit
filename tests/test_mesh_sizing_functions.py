@@ -46,5 +46,5 @@ def test_distance_from_points():
 
 
 if __name__ == "__main__":
-    #test_distance_form_linestring()
-    test_distance_from_points()
+    test_distance_form_linestring()
+    #test_distance_from_points()
