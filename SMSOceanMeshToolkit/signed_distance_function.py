@@ -7,6 +7,7 @@ import numpy as np
 import scipy.spatial
 from inpoly import inpoly2
 import xarray as xr
+import rioxarray
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 from .geospatial_data import CoastalGeometry, _create_boubox
@@ -116,9 +117,9 @@ class SDFDomain:
     def plot(self, grid_size=100):
         ax = _plot(self, grid_size=grid_size)
         return ax
-    
+
     @staticmethod
-    def to_xarray(self, grid_size=100): 
+    def to_xarray(self, crs, grid_size=100): 
         '''
         Evaluate the signed distance function on a grid and return an xarray dataset
         '''
@@ -138,6 +139,9 @@ class SDFDomain:
                 "y": y_grid,
             },
         )
+        # add the crs
+        ds.rio.write_crs(crs, inplace=True)
+
         return ds
  
  

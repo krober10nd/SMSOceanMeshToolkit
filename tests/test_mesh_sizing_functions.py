@@ -5,6 +5,20 @@ import SMSOceanMeshToolkit as smsom
 import matplotlib.pyplot as plt
 import geopandas as gpd
 
+def test_distance_sizing_function():
+    minimum_mesh_size = 100.0 / 111e3
+    vector_data = "data/Lk_erie_Lk_st_clair_shoreline_polygons.shp"
+    bounding_box = (-83.22137037, -82.5754578, 41.32025057, 41.89550398)
+
+    region = smsom.Region(bounding_box, crs="EPSG:4326")
+    grid = smsom.Grid(region, dx=50.0 / 111e3)
+
+    shoreline = smsom.CoastalGeometry(
+        vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
+    )
+    szfx  = smsom.distance_sizing_function(grid, shoreline, rate=0.10, max_edge_length=1000.0 / 111e3)
+    szfx.plot(plot_colorbar=True, cbarlabel=f"Distance from shoreline ({grid.units})")
+    plt.show()
 
 def test_distance_form_linestring():
     bbox = (-72.96163620, -72.89554781, 41.21484433, 41.24162214)
@@ -46,5 +60,6 @@ def test_distance_from_points():
 
 
 if __name__ == "__main__":
-    test_distance_form_linestring()
+    test_distance_sizing_function()
+    #test_distance_form_linestring()
     #test_distance_from_points()

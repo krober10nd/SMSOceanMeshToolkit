@@ -9,7 +9,7 @@ from inpoly import inpoly2
 from shapely.geometry import LineString
 
 import skfmm # fast marching method
-
+from .edges import get_poly_edges
 from .Grid import Grid
 
 logger = logging.getLogger(__name__)
@@ -174,29 +174,25 @@ def distance_sizing_from_point_function(
     return grid
 
 
-# TODO 
 def distance_sizing_function(
-    shoreline,
+    grid, 
+    coastal_geometry,
     rate=0.15,
-    max_edge_length=None,
-    coarsen=1.0,
-    crs="EPSG:4326",
+    max_edge_length=np.inf,
 ):
     """
     Mesh sizes that vary linearly at `rate` from coordinates in `obj`:CoastalGeometry
     
     Parameters
     ----------
-    shoreline: :class:`Shoreline`
-        Data processed from :class:`Shoreline`.
+    grid: class:`Grid`
+        A grid object that will contain the distance sizing function
+    coastal_geometry: :class:`CoastalGeometry`
+        Vector data processed
     rate: float, optional
         The rate of expansion in decimal percent from the shoreline.
     max_edge_length: float, optional
         The maximum allowable edge length
-    coarsen: integer, optional
-        Downsample the grid by a constant factor in x and y axes
-    crs: A Python int, dict, or str, optional
-        The coordinate reference system
 
     Returns
     -------
@@ -205,21 +201,13 @@ def distance_sizing_function(
     """
     logger.info("Building a distance mesh sizing function...")
 
-    grid = Grid(
-        bbox=shoreline.bbox,
-        dx=shoreline.h0 * coarsen,
-        hmin=shoreline.h0,
-        extrapolate=True,
-        values=0.0,
-        crs=crs,
-    )
-    # create phi (-1 where shoreline point intersects grid points 1 elsewhere)
+    # create phi (-1 where coastal vector intersects grid points 1 elsewhere)
     phi = np.ones(shape=(grid.nx, grid.ny))
     lon, lat = grid.create_grid()
-    points = np.vstack((shoreline.inner, shoreline.mainland))
+    points = np.vstack((coastal_geometry.inner, coastal_geometry.mainland))
     # remove shoreline components outside the shoreline.boubox
-    boubox = np.nan_to_num(shoreline.boubox)  # remove nan for inpoly2
-    e_box = edges.get_poly_edges(shoreline.boubox)
+    boubox = np.nan_to_num(coastal_geometry.region_polygon)  # remove nan for inpoly2
+    e_box = get_poly_edges(coastal_geometry.region_polygon)
     mask = np.ones((grid.nx, grid.ny), dtype=bool)
     if len(points) > 0:
         try:
@@ -241,9 +229,9 @@ def distance_sizing_function(
         dis = np.abs(skfmm.distance(phi, [grid.dx, grid.dy]))
     except ValueError:
         logger.info("0-level set not found in domain or grid malformed")
-        dis = np.zeros((grid.nx, grid.ny)) + 999
-    tmp = shoreline.h0 + dis * rate
-    if max_edge_length is not None:
+        dis = np.zeros((grid.nx, grid.ny)) + 99999
+    tmp = coastal_geometry.minimum_mesh_size + dis * rate
+    if max_edge_length is not np.inf:
         tmp[tmp > max_edge_length] = max_edge_length
     grid.values = np.ma.array(tmp, mask=mask)
     grid.build_interpolant()
