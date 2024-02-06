@@ -5,6 +5,8 @@ import numpy as np
 import scipy.spatial
 from scipy.interpolate import RegularGridInterpolator
 import xarray as xr 
+import rioxarray
+
 
 from .Region import Region
 
@@ -397,14 +399,16 @@ class Grid(Region):
 
         """
         x, y = self.create_vectors()
-        xg, yg = self.create_grid()
+        #xg, yg = self.create_grid()
         ds = xr.Dataset(
             {
-                "values": (["x", "y"], self.values),
+                "values": (["y", "x"], self.values.T),
             },
             coords={
                 "x": x,
                 "y": y,
             },
         )
+        ds.rio.write_crs(self.crs, inplace=True)
+
         return ds
