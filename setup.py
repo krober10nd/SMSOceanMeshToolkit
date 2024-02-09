@@ -27,7 +27,8 @@ setup(
         'scipy',
         'xarray',
         'rioxarray',
+        'scikit-image',
+	    'scikit-fmm', 
         'inpoly @ git+https://github.com/dengwirda/inpoly-python.git@v0.1.2',
-	'scikit-fmm', 
     ],
 )

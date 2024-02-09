@@ -1,16 +1,24 @@
 '''
 Mesh sizing functions
 '''
+# stdlib
 import logging
 
+# tpl
 import geopandas as gpd
 import numpy as np
 from inpoly import inpoly2
 from shapely.geometry import LineString
-
+import numpy as np
+import scipy.spatial
+from skimage.morphology import medial_axis
 import skfmm # fast marching method
+
+# from SMSOceanMeshToolkit
 from .edges import get_poly_edges
+from .Region import Region
 from .Grid import Grid
+from .signed_distance_function import signed_distance_function
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +26,102 @@ __all__ = [
     "distance_sizing_function",
     "distance_sizing_from_point_function",
     "distance_sizing_from_linestring_function",
+    "feature_sizing_function",
 ]
+
+def feature_sizing_function(
+    grid, 
+    coastal_geometry,
+    number_of_elements_per_width=3,
+    max_edge_length=np.inf,
+):
+    """
+    Mesh sizes vary proportional to the width or "thickness" of the shoreline
+
+    Parameters
+    ----------
+    grid: class:`Grid`
+        A grid object that will contain the feature sizing function
+    coastal_geometry: :class:`CoastalGeometry`
+        Vector data processed
+    number_of_elements_per_width: integer, optional
+        The number of elements per estimated width of the vector data
+    max_edge_length: float, optional
+        The maximum edge length of the mesh in the units of the grid's crs
+
+    Returns
+    -------
+    grid: class:`Grid`
+        A grid ojbect with its values field populated with feature sizing
+
+    """
+
+    logger.info("Building a feature sizing function...")
+    assert number_of_elements_per_width > 0, "local feature size  must be greater than 0"
+    
+    # create a Region 
+    region = Region(coastal_geometry.bbox, grid.crs)
+    
+    # form a signed distance function from the coastal geometry
+    signed_distance_function = signed_distance_function(coastal_geometry)
+
+    min_edge_length = coastal_geometry.minimum_mesh_size
+    # The medial axis calculation requires a finer grid than the final grid by a factor of 2x
+    grid_calc = Grid(
+        region, 
+        dx=min_edge_length / 2.0,  # dx is half that of the original shoreline spacing
+        values=0.0,
+        extrapolate=True,
+    )
+    x, y = grid_calc.create_grid()
+    qpts = np.column_stack((x.flatten(), y.flatten()))
+    phi = signed_distance_function.eval(qpts)
+    # outside 
+    phi[phi > 0] = 999
+    # inside and on the boundary
+    phi[phi <= 0] = 1.0
+    # n/a values
+    phi[phi == 999] = 0.0
+    phi = np.reshape(phi, grid_calc.values.shape)
+
+    # calculate the medial axis points
+    skel = medial_axis(phi, return_distance=False)
+
+    indicies_medial_points = skel == 1
+    medial_points_x = x[indicies_medial_points]
+    medial_points_y = y[indicies_medial_points]
+    medial_points = np.column_stack((medial_points_x, medial_points_y))
+
+    phi2 = np.ones(shape=(grid_calc.nx, grid_calc.ny))
+    points = np.vstack((coastal_geometry.inner, coastal_geometry.mainland))
+    # find location of points on grid
+    indices = grid_calc.find_indices(points, x, y)
+    phi2[indices] = -1.0
+    dis = np.abs(skfmm.distance(phi2, [grid_calc.dx, grid_calc.dy]))
+
+    # calculate the distance to medial axis
+    tree = scipy.spatial.cKDTree(medial_points)
+    try:
+        dMA, _ = tree.query(qpts, k=1, workers=-1)
+    except (Exception,):
+        dMA, _ = tree.query(qpts, k=1, n_jobs=-1)
+    dMA = dMA.reshape(*dis.shape)
+    W = dMA + np.abs(dis)
+    feature_size = (2 * W) / number_of_elements_per_width
+
+    grid_calc.values = feature_size
+    grid_calc.build_interpolant()
+    # interpolate the finer grid used for calculations to the final coarser grid
+    grid = grid_calc.interpolate_onto(grid)
+    if min_edge_length is not None:
+        grid.values[grid.values < min_edge_length] = min_edge_length
+    if max_edge_length is not np.inf:
+        grid.values[grid.values > max_edge_length] = max_edge_length
+
+    grid.extrapolate = True
+    grid.build_interpolant()
+    return grid
+
 
 def _line_to_points_array(line):
     """Convert a shapely LineString to a numpy array of points"""

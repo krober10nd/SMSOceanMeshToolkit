@@ -6,6 +6,7 @@ from .mesh_sizing_functions import (
     distance_sizing_from_linestring_function,
     distance_sizing_from_point_function,
     distance_sizing_function,
+    feature_sizing_function,
 )
 
 __all__ = [
@@ -16,4 +17,5 @@ __all__ = [
     "distance_sizing_function",
     "distance_sizing_from_linestring_function",
     "distance_sizing_from_point_function",
+    "feature_sizing_function",
 ]
