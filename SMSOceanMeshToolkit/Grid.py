@@ -115,7 +115,7 @@ class Grid(Region):
         elif data.shape != (self.nx, self.ny):
             raise ValueError(f"Data shape does not match grid dimensions: {data.shape} != ({self.nx}, {self.ny})")
         # print a warning if there are NaNs in the data
-        if np.isnan(data).any():
+        if np.isnan(data).any() and not np.isnan(data).all():
             logger.warning("WARNING: NaNs found in data contained in grid object's values. Interpolation may be inaccurate.")
         self.__values = data
 

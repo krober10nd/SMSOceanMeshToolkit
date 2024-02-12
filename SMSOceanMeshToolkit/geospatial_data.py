@@ -548,8 +548,8 @@ class CoastalGeometry(Region):
             polys = _smooth_vector_data(polys, self.refinements)
         elif smooth_shoreline and smoothing_approach == 'moving_window':
             polys = _smooth_vector_data_moving_avg(polys, self.smoothing_window)
-        elif smooth_shoreline and smoothing_approach not in ('chaikin', 'moving_window'):
-            raise ValueError(f"Unknown smoothing approach {self.smoothing_approach}. Must be 'chaikin' or 'moving_window'.")
+        elif smooth_shoreline and smoothing_approach not in ('chaikin', 'moving_window','none'):
+            raise ValueError(f"Unknown smoothing approach {self.smoothing_approach}. Must be 'chaikin' or 'moving_window' or 'none'.")
 
         polys = _clip_polys(polys, region_bbox)
 

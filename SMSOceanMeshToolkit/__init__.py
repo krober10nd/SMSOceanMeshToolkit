@@ -8,6 +8,7 @@ from .mesh_sizing_functions import (
     distance_sizing_function,
     feature_sizing_function,
 )
+from .mesh_generator import generate_mesh, fix_mesh
 
 __all__ = [
     "Region",
@@ -18,4 +19,6 @@ __all__ = [
     "distance_sizing_from_linestring_function",
     "distance_sizing_from_point_function",
     "feature_sizing_function",
+    "fix_mesh",
+    "generate_mesh",
 ]
