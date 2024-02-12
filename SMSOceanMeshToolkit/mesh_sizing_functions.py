@@ -63,7 +63,7 @@ def feature_sizing_function(
     region = Region(coastal_geometry.bbox, grid.crs)
     
     # form a signed distance function from the coastal geometry
-    signed_distance_function = signed_distance_function(coastal_geometry)
+    my_signed_distance_function = signed_distance_function(coastal_geometry)
 
     min_edge_length = coastal_geometry.minimum_mesh_size
     # The medial axis calculation requires a finer grid than the final grid by a factor of 2x
@@ -75,7 +75,7 @@ def feature_sizing_function(
     )
     x, y = grid_calc.create_grid()
     qpts = np.column_stack((x.flatten(), y.flatten()))
-    phi = signed_distance_function.eval(qpts)
+    phi = my_signed_distance_function.eval(qpts)
     # outside 
     phi[phi > 0] = 999
     # inside and on the boundary
