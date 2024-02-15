@@ -336,6 +336,7 @@ def distance_sizing_function(
     tmp = coastal_geometry.minimum_mesh_size + dis * rate
     if max_edge_length is not np.inf:
         tmp[tmp > max_edge_length] = max_edge_length
-    grid.values = np.ma.array(tmp, mask=mask)
+    #grid.values = np.ma.array(tmp, mask=mask)
+    grid.values = np.array(tmp)
     grid.build_interpolant()
     return grid

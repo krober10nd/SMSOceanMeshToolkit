@@ -19,7 +19,9 @@ def test_feature_sizing_function():
     szfx = smsom.feature_sizing_function(grid, shoreline, number_of_elements_per_width=3) 
     print(szfx)
     
-    szfx.plot(plot_colorbar=True, cbarlabel=f"Feature size ({grid.units})")
+    _,ax,_=szfx.plot(plot_colorbar=True, cbarlabel=f"Feature size ({grid.units})", holding=True)
+    shoreline.plot(ax=ax)
+    plt.savefig("feature_sizing_function.png")
     plt.show()
     
     
@@ -35,8 +37,9 @@ def test_distance_sizing_function():
         vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
     )
     szfx  = smsom.distance_sizing_function(grid, shoreline, rate=0.10, max_edge_length=1000.0 / 111e3)
-    szfx.plot(plot_colorbar=True, cbarlabel=f"Distance from shoreline ({grid.units})")
-    plt.show()
+    _,ax,_=szfx.plot(plot_colorbar=True, cbarlabel=f"Distance from shoreline ({grid.units})", holding=True)
+    shoreline.plot(ax=ax)
+    plt.savefig("distance_sizing_function.png")
 
 def test_distance_form_linestring():
     bbox = (-72.96163620, -72.89554781, 41.21484433, 41.24162214)
@@ -74,7 +77,6 @@ def test_distance_from_points():
     # set the aspect ratio to 1
     ax.set_aspect('equal')
     gdf.plot(ax=ax, color="red")
-    plt.show()
 
 
 if __name__ == "__main__":
