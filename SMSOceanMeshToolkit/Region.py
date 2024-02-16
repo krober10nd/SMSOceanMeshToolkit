@@ -50,7 +50,9 @@ class Region:
             if any(value[i] >= value[i + 1] for i in (0, 2)):
                 raise ValueError("bbox values are not in the correct order.")
         elif isinstance(value, np.ndarray):
-            pass 
+            # form the box from the points return a tuple (immutable)
+            value = (value[:, 0].min(), value[:, 0].max(),
+                             value[:, 1].min(), value[:, 1].max()) 
         self.__bbox = value
 
     def transform_to(self, dst_crs):
