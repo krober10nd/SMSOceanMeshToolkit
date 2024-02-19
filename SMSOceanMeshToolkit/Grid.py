@@ -65,7 +65,6 @@ class Grid(Region):
         self.x0y0 = (self.bbox[0], self.bbox[2])  # bottom left corner
         self.extrapolate = extrapolate
 
-
         # NOTE: We must ensure that the entire region is covered by the grid object
         # and sometimes this is not possible for arbitrary dx and dy. So, we recompute the dx and dy
         # thus the user specified dx and dy may be different than the actual dx and dy
@@ -83,6 +82,50 @@ class Grid(Region):
 
     def __repr__(self):
        return f"bbox={self.bbox}, dx={self.dx}, dy={self.dy}, crs={self.crs}), units={self.units}"
+
+    # create a method that converts the grid to a xarray dataset
+    @classmethod
+    def from_xarray(self, da, band='data', crs='EPSG:4326', **kwargs):
+        """
+        Convert an xarray data array to a :obj:`Grid` object
+
+        Parameters
+        ----------
+        da: :obj:`xarray.Dataset`
+            An xarray data array with the grid values
+        band: str, optional
+            Name of the band to read in (default is 'data')
+        kwargs: dict
+            Additional keyword arguments to pass to the Grid:obj
+
+        Returns
+        -------
+        self: :obj:`Grid`
+            A :obj:`Grid` object with the grid values
+
+        """
+        # if a dataset is passed in, then we need to extract the data array
+        if isinstance(da, xr.Dataset):
+            if len(da.data_vars) > 1:
+                raise ValueError("More than one data variable found in xarray dataset. Please specify the band to read in.")
+            band = list(da.data_vars)[0]
+            da = da[band]
+        # determine the bbox & crs from the xarray dataset
+        _bbox = (float(da.x.min().values), float(da.x.max().values), float(da.y.min().values), float(da.y.max().values))
+        _crs = da.rio.crs
+        if _crs is None:
+            logging.info("No crs found in xarray dataset. Using default crs: EPSG:4326")
+            _crs = crs
+        _region = Region(_bbox, _crs)
+        # determine the dx and dy 
+        _dx = abs(float(da.x[1] - da.x[0].values))
+        _dy = abs(float(da.y[1] - da.y[0].values))
+        # create the grid object
+        grid = Grid(_region, dx=_dx, dy=_dy, **kwargs)
+        
+        grid.values = da.values.T
+        
+        return grid
 
     @property
     def dx(self):
@@ -145,11 +188,11 @@ class Grid(Region):
 
         """
         # estimate nx and ny based on user supplied dx and dy
-        _nx = int(np.ceil((self.bbox[1] - self.bbox[0]) / self.dx)) + 1
-        _ny = int(np.ceil((self.bbox[3] - self.bbox[2]) / self.dy)) + 1
+        _nx = int(np.floor((self.bbox[1] - self.bbox[0]) / self.dx)) + 1
+        _ny = int(np.floor((self.bbox[3] - self.bbox[2]) / self.dy)) + 1
         
         x = np.linspace(self.bbox[0], self.bbox[1], _nx)
-        y = np.linspace(self.bbox[2], self.bbox[3], _ny)
+        y = np.flipud(np.linspace(self.bbox[2], self.bbox[3], _ny))
         return x, y
 
     def create_grid(self):
@@ -214,7 +257,7 @@ class Grid(Region):
 
         Note
         ----
-        In other words, in areas of overlap, grid1 values
+        In other worda, in areas of overlap, grid1 values
         take precedence elsewhere grid2 values are retained.
 
         Grid3 has dx & dy spacings following the resolution of grid2.
@@ -224,7 +267,7 @@ class Grid(Region):
         grid2: :obj:`Grid`
             A :obj:`Grid` with `values`.
         method: str, optional
-            Way to interpolate data between grids
+            Way to interpolate data between grida
 
         Returns
         -------
@@ -323,7 +366,6 @@ class Grid(Region):
             _xvec, _yvec = self.create_vectors()
             xmid = np.mean(_xvec)
             ymid = np.mean(_yvec)
-            print(xmid, ymid)
             ax.text(xmid, ymid, 'NO DATA', horizontalalignment='center', verticalalignment='center', color='red', fontsize=20)
 
         if xlabel is not None:
@@ -394,21 +436,21 @@ class Grid(Region):
 
         Returns
         -------
-        ds: :obj:`xarray.Dataset`
-            An xarray dataset with the grid values
+        da: :obj:`xarray.Dataset`
+            An xarray data array with the grid values
 
         """
         x, y = self.create_vectors()
         #xg, yg = self.create_grid()
-        ds = xr.Dataset(
+        da = xr.Dataset(
             {
-                "values": (["y", "x"], self.values.T),
+                "data": (["y", "x"], self.values.T),
             },
             coords={
                 "x": x,
                 "y": y,
             },
         )
-        ds.rio.write_crs(self.crs, inplace=True)
+        da.rio.write_crs(self.crs, inplace=True)
 
-        return ds
+        return da

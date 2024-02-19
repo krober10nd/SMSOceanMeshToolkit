@@ -1,6 +1,16 @@
 '''Testing Grid class'''
 from SMSOceanMeshToolkit import Grid, Region
 
+def test_to_from_xarray():
+    region = Region((-10., 10., -10., 10.), 'EPSG:4326')
+    grid = Grid(region, dx=1.0, dy=2.0, values=1.2)
+    ds = grid.to_xarray()
+    grid2 = Grid.from_xarray(ds)
+    assert grid2.dx == 1.0
+    assert grid2.dy == 2.0
+    assert grid2.x0y0 == (-10., -10.)
+    assert grid2.crs == 'EPSG:4326'
+    assert grid2.values[0, 0] == 1.2
 
 def test_irregular_grid():
     '''
@@ -40,9 +50,9 @@ def test_regular_grid():
     assert xg.shape == yg.shape
     assert xg.shape == (21, 21)
     assert xg[0, 0] == -10.
-    assert yg[0, 0] == -10.
+    assert yg[0, 0] == 10.
     assert xg[-1, -1] == 10.
-    assert yg[-1, -1] == 10.
+    assert yg[-1, -1] == -10.
     # test the grid values
     assert grid.values.shape == (21, 21)
 
@@ -50,4 +60,5 @@ def test_regular_grid():
 if __name__ == '__main__':
     #test_regular_grid()
     #test_irregular_grid()
-    test_interpolate_onto()
+    #test_interpolate_onto()
+    test_to_from_xarray()
