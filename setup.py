@@ -4,6 +4,8 @@ setup(
     name="SMSOceanMeshToolkit",
     version="0.1.0",
     packages=find_packages(),
+    package_data={'SMSOceanMeshToolkit/libs': ['*.so', '*.pyd']}, 
+    include_package_data=True, 
     author="Keith Roberts",
     author_email="kroberts@baird.com",
     description="Tools for oceanmesh to interface with SMS",
