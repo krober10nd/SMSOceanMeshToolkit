@@ -336,7 +336,7 @@ def generate_mesh(domain, edge_length, **kwargs):
 def _unpack_sizing(edge_length, opts):
     if isinstance(edge_length, Grid):
         fh = edge_length.eval
-        min_edge_length = edge_length.hmin
+        min_edge_length = np.min(edge_length.values)
     elif callable(edge_length):
         fh = edge_length
         min_edge_length = opts["min_edge_length"]
@@ -472,8 +472,6 @@ def _project_points_back(p, fd, deps):
 
 def _generate_initial_points(min_edge_length, geps, bbox, fh, fd, pfix, stereo=False):
     """Create initial distribution in bounding box (equilateral triangles)"""
-    if stereo:
-        bbox = np.array([[-180, 180], [-89, 89]])
     p = np.mgrid[
         tuple(slice(min, max + min_edge_length, min_edge_length) for min, max in bbox)
     ].astype(float)

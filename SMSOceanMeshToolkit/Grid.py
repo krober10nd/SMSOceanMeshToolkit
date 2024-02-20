@@ -391,7 +391,7 @@ class Grid(Region):
         if holding is False:
             plt.show()
             
-        return fig, ax, pc
+        return ax
 
     def build_interpolant(self):
         """

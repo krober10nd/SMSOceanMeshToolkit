@@ -242,7 +242,7 @@ def signed_distance_function(coastal_geometry, invert=False):
     poly2 = boubox
     # TODO: investigate performance by modifying the leafsize & balanced_tree
     tree2 = scipy.spatial.cKDTree(
-        poly2[~np.isnan(poly2[:, 0]), :], balanced_tree=False, leafsize=50
+        poly2[~np.isnan(poly2[:, 0]), :], #balanced_tree=False, leafsize=50
     )
     # this callback is used for multiscale meshing 
     def func_covering(x):

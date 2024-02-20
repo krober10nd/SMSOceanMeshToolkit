@@ -207,6 +207,9 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
         xy = np.vstack((xy, xy[0]))
         out = np.vstack((out, xy, [nan, nan]))
 
+    # densify out 
+    out = _densify(out, h0 / 2, bbox, radius=0.0)
+    
     logger.debug("Exiting:classify_shoreline")
 
     return inner, mainland, out
@@ -320,7 +323,7 @@ def _smooth_vector_data(polys, N):
     return _convert_to_array(out)
 
 
-def _clip_polys(polys, bbox, delta=0.10):
+def _clip_polys(polys, bbox, delta=0.1):
     """
     Clip segments in `polys` that intersect with `bbox`.
     Clipped segments need to extend outside `bbox` to avoid
@@ -330,7 +333,11 @@ def _clip_polys(polys, bbox, delta=0.10):
     """
 
     logger.debug("Entering:_clip_polys")
-
+    # Dilate bounding box to allow clipped segment to overshoot original box.
+    #_boubox = shapely.geometry.Polygon(boubox)
+    #_boubox = _boubox.buffer(delta)
+    # extract the exterior coordinates of the boubox
+    #boubox = np.array(_boubox.exterior.coords)
     # Inflate bounding box to allow clipped segment to overshoot original box.
     bbox = (bbox[0] - delta, bbox[1] + delta, bbox[2] - delta, bbox[3] + delta)
     boubox = np.asarray(_create_boubox(bbox))
@@ -502,7 +509,7 @@ class CoastalGeometry(Region):
         if isinstance(region_boundary, tuple):
             _region_polygon = np.asarray(_create_boubox(region_boundary))
         elif isinstance(region_boundary, np.ndarray):
-            _region_polygon = np.asarray(region_boundary)
+            _region_polygon = region_boundary
         elif isinstance(region_boundary, str):  # then assume shapefile
             try:
                 _region_polygon = gpd.read_file(region_boundary)
@@ -554,7 +561,7 @@ class CoastalGeometry(Region):
         polys = _clip_polys(polys, region_bbox)
 
         self.inner, self.mainland, self.region_polygon = _classify_shoreline(
-            region_bbox, self.region_polygon, polys, 
+            region_bbox, _region_polygon, polys, 
             self.minimum_mesh_size / 2, self.minimum_area_mult
         )
 
@@ -618,9 +625,9 @@ class CoastalGeometry(Region):
 
     @minimum_area_mult.setter
     def minimum_area_mult(self, value):
-        if value <= 0.0:
+        if value < 0.0:
             raise ValueError(
-                "Minimum area multiplier * minimum_mesh_size**2 to prune polygons must be > 0"
+                "Minimum area multiplier * minimum_mesh_size**2 to prune polygons must be >= 0"
             )
         self.__minimum_area_mult = value
 
