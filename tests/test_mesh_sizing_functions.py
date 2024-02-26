@@ -5,6 +5,14 @@ import SMSOceanMeshToolkit as smsom
 import matplotlib.pyplot as plt
 import geopandas as gpd
 
+def test_wave_sizing_function():
+    # set up the region and grid
+    # region =  
+    # grid = 
+    # read in the dem 
+    # szfx = smsom.wavelength_sizing_function(grid, dem, wave_height, wave_period, water_depth)
+    pass 
+
 def test_feature_sizing_function():
     minimum_mesh_size = 100.0 / 111e3
     vector_data = "data/Lk_erie_Lk_st_clair_shoreline_polygons.shp"
@@ -80,7 +88,8 @@ def test_distance_from_points():
 
 
 if __name__ == "__main__":
-    test_feature_sizing_function()
+    test_wave_sizing_function()
+    #test_feature_sizing_function()
     #test_distance_sizing_function()
     #test_distance_form_linestring()
     #test_distance_from_points()

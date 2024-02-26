@@ -30,7 +30,76 @@ __all__ = [
     "distance_sizing_from_linestring_function",
     "feature_sizing_function",
     "enforce_mesh_gradation",
+    "wavelength_sizing_function",
 ]
+
+
+def wavelength_sizing_function(
+    grid, 
+    dem,
+    wl=10, 
+    max_edge_length=np.inf,
+    period=12.42 * 3600,  # M2 period in seconds
+    gravity=9.81,  # m/s^2
+    crs="EPSG:4326",
+):
+    """
+    Mesh sizes that vary proportional to an estimate of the wavelength
+    of a period (default M2-period on Earth is 12.42 hours) and the
+    acceleration due to gravity.
+
+    Parameters
+    ----------
+    grid: :class:`Grid`
+        A grid object that will contain the wavelength mesh sizing function
+    dem:  :class:`DEM`
+        Data processed from :class:`DEM`.
+    wl: integer, optional
+        The number of desired elements per wavelength of the M2 constituent
+    max_edge_length: float, optional
+        The maximum edge length in meters in the domain.
+    period: float, optional
+        The wavelength is estimated with shallow water theory and this period
+        in seconds
+    gravity: float, optional
+        The acceleration due to gravity in m/s^2
+
+
+    Returns
+    -------
+    :class:`Grid` objectd
+        A sizing function that takes a point and returns a value
+
+    """
+    logger.info("Building a wavelength sizing function...")
+
+    X, Y = grid.create_grid()
+    # Interpolate the DEM onto the grid points
+    tmpz = dem.ds.interp(latitude=Y, longitude=X)
+
+    if crs == "EPSG:4326" or crs == 4326:
+        mean_latitude = np.mean(grid.bbox[2:])
+        meters_per_degree = (
+            111132.92
+            - 559.82 * np.cos(2 * mean_latitude)
+            + 1.175 * np.cos(4 * mean_latitude)
+            - 0.0023 * np.cos(6 * mean_latitude)
+        )
+    
+    tmpz[np.abs(tmpz) < 1] # avoid division by zero
+    # Calculate the wavelength of a wave with period `period` and
+    # acceleration due to gravity `gravity`  
+    grid.values = period * np.sqrt(gravity * np.abs(tmpz)) / wl
+
+    # Convert back to degrees from meters (if geographic)
+    if crs == "EPSG:4326" or crs == 4326:
+        grid.values /= meters_per_degree
+
+    if max_edge_length is not None:
+        grid.values[grid.values > max_edge_length] = max_edge_length
+
+    grid.build_interpolant()
+    return grid
 
 
 def enforce_mesh_gradation(grid, gradation=0.05):
