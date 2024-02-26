@@ -14,11 +14,13 @@ import scipy.spatial
 from skimage.morphology import medial_axis
 import skfmm # fast marching method
 
-# from SMSOceanMeshToolkit
+# from SMSOceanMeshToolkit/local
 from .edges import get_poly_edges
 from .Region import Region
 from .Grid import Grid
 from .signed_distance_function import signed_distance_function
+
+from .libs._HamiltonJacobi import gradient_limit
 
 logger = logging.getLogger(__name__)
 
@@ -27,13 +29,60 @@ __all__ = [
     "distance_sizing_from_point_function",
     "distance_sizing_from_linestring_function",
     "feature_sizing_function",
+    "enforce_mesh_gradation",
 ]
+
+
+def enforce_mesh_gradation(grid, gradation=0.05):
+    """
+    Enforce a mesh size gradation bound `gradation` on a :class:`grid`
+
+    Parameters
+    ----------
+    grid: :class:`Grid`
+        A grid object with its values field populated
+    gradation: float
+        The decimal percent mesh size gradation rate to-be-enforced.
+
+    Returns
+    -------
+    grid: class:`Grid`
+        A grid ojbect with its values field gradient limited
+
+    """
+    if gradation <= 0:
+        raise ValueError("Parameter `gradation` must be > 0.0")
+    if gradation >= 0.30:
+        logger.warning("Parameter `gradation` is set excessively high (> 0.30)")
+
+    logger.info(f"Enforcing mesh size gradation of {gradation} decimal percent...")
+
+    elen = grid.dx
+    # TODO: add support for unequal grid spaces
+    assert (
+        grid.dx == grid.dy
+    ), "Structured grids with unequal grid spaces not yet supported"
+    cell_size = grid.values.copy()
+    sz = cell_size.shape
+    sz = (sz[0], sz[1], 1)
+    cell_size = cell_size.flatten("F")
+    MAXITER = 10000 # maximum number of iterations in cpp code 
+    # NB: cell_size is in units of the grid's crs
+    tmp = gradient_limit([*sz], elen, gradation, MAXITER, cell_size)
+    tmp = np.reshape(tmp, (sz[0], sz[1]), "F")
+    # Replace the grid's values with the gradient limited values
+    grid.values = tmp
+    # Rebuild the interpolant
+    grid.build_interpolant()
+    return grid
+
 
 def feature_sizing_function(
     grid, 
     coastal_geometry,
     number_of_elements_per_width=3,
     max_edge_length=np.inf,
+    gradation=0.05,
 ):
     """
     Mesh sizes vary proportional to the width or "thickness" of the shoreline
@@ -48,6 +97,8 @@ def feature_sizing_function(
         The number of elements per estimated width of the vector data
     max_edge_length: float, optional
         The maximum edge length of the mesh in the units of the grid's crs
+    gradation: float, optional
+        The decimal percent mesh size gradation rate to-be-enforced.
 
     Returns
     -------
@@ -120,6 +171,10 @@ def feature_sizing_function(
 
     grid.extrapolate = True
     grid.build_interpolant()
+    
+    # enforce mesh gradation
+    grid = enforce_mesh_gradation(grid, gradation=gradation)
+    
     return grid
 
 

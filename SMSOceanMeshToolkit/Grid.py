@@ -170,6 +170,23 @@ class Grid(Region):
         return np.concatenate(
             [arr[0, :-1], arr[:-1, -1], arr[-1, ::-1], arr[-2:0:-1, 0]], axis=0
         )
+    # create a copy method 
+    def copy(self):
+        """
+        Create a copy of the :obj:`Grid` object
+
+        Parameters
+        ----------
+        None
+
+        Returns
+        -------
+        self: :obj:`Grid`
+            A copy of the :obj:`Grid` object
+
+        """
+        return Grid(self, self.dx, self.dy, self.values, self.extrapolate, self.eval)
+    
 
     def create_vectors(self):
         """

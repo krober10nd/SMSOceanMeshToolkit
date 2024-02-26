@@ -19,7 +19,7 @@ def test_feature_sizing_function():
     szfx = smsom.feature_sizing_function(grid, shoreline, number_of_elements_per_width=3) 
     print(szfx)
     
-    _,ax,_=szfx.plot(plot_colorbar=True, cbarlabel=f"Feature size ({grid.units})", holding=True)
+    ax =szfx.plot(plot_colorbar=True, cbarlabel=f"Feature size ({grid.units})", holding=True)
     shoreline.plot(ax=ax)
     plt.savefig("feature_sizing_function.png")
     plt.show()
@@ -37,7 +37,7 @@ def test_distance_sizing_function():
         vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
     )
     szfx  = smsom.distance_sizing_function(grid, shoreline, rate=0.10, max_edge_length=1000.0 / 111e3)
-    _,ax,_=szfx.plot(plot_colorbar=True, cbarlabel=f"Distance from shoreline ({grid.units})", holding=True)
+    ax,_=szfx.plot(plot_colorbar=True, cbarlabel=f"Distance from shoreline ({grid.units})", holding=True)
     shoreline.plot(ax=ax)
     plt.savefig("distance_sizing_function.png")
 
@@ -51,7 +51,7 @@ def test_distance_form_linestring():
         grid, linestrings, min_edge_length
     )
     gdf = gpd.read_file(linestrings)
-    _, ax, _ = szfx.plot(
+    ax, _ = szfx.plot(
         holding=True,
         plot_colorbar=True,
         cbarlabel=f"Distance from linestring ({grid.units})",
