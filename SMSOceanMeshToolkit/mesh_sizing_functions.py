@@ -73,9 +73,9 @@ def wavelength_sizing_function(
     """
     logger.info("Building a wavelength sizing function...")
 
-    X, Y = grid.create_grid()
+    x, y = grid.create_vectors()
     # Interpolate the DEM onto the grid points
-    tmpz = dem.ds.interp(latitude=Y, longitude=X)
+    tmpz = dem.da.interp(x=x, y=y)
 
     if crs == "EPSG:4326" or crs == 4326:
         mean_latitude = np.mean(grid.bbox[2:])
@@ -85,7 +85,7 @@ def wavelength_sizing_function(
             + 1.175 * np.cos(4 * mean_latitude)
             - 0.0023 * np.cos(6 * mean_latitude)
         )
-    
+    tmpz = tmpz.values.T
     tmpz[np.abs(tmpz) < 1] # avoid division by zero
     # Calculate the wavelength of a wave with period `period` and
     # acceleration due to gravity `gravity`  
