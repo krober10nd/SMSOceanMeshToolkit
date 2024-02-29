@@ -9,6 +9,7 @@ from .mesh_sizing_functions import (
     feature_sizing_function,
     enforce_mesh_gradation,
     wavelength_sizing_function,
+    enforce_CFL_condition, 
 )
 from .DEM import DEM
 from .mesh_generator import generate_mesh, simp_vol
@@ -22,6 +23,7 @@ __all__ = [
     "distance_sizing_function",
     "distance_sizing_from_linestring_function",
     "distance_sizing_from_point_function",
+    "enforce_CFL_condition",
     "enforce_mesh_gradation", 
     "feature_sizing_function",
     "wavelength_sizing_function",

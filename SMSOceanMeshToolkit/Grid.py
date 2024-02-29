@@ -170,6 +170,16 @@ class Grid(Region):
         return np.concatenate(
             [arr[0, :-1], arr[:-1, -1], arr[-1, ::-1], arr[-2:0:-1, 0]], axis=0
         )
+    
+    def get_centroids(self): 
+        '''
+        Get the centroids of the grid cells
+        '''
+        X, Y = self.create_grid()
+        Xc = (X[1:, 1:] + X[:-1, :-1]) / 2
+        Yc = (Y[1:, 1:] + Y[:-1, :-1]) / 2
+        return Xc, Yc 
+    
     # create a copy method 
     def copy(self):
         """

@@ -31,8 +31,103 @@ __all__ = [
     "feature_sizing_function",
     "enforce_mesh_gradation",
     "wavelength_sizing_function",
+    "enforce_CFL_condition",
 ]
 
+def enforce_CFL_condition(grid, dem, timestep, courant_number=0.5, gravity=9.81, return_violations=False):
+    """
+    Enforce the Courant-Friedrichs-Lewy condition on a :class:`grid`
+    assuming shallow water wave speed `max_speed` + max_speed and an acceptable 
+    Courant number `cr`.
+    
+    Parameters 
+    ----------
+    grid: :class:`Grid`
+        A grid object with its values field populated to be limited
+    dem: :class:`DEM`
+        Data processed from :class:`DEM`.
+    timestep: float
+        The time step in seconds that the CFL condition is to be enforced
+    courant_number: float
+        The Courant number to enforce
+    gravity: float
+        The acceleration due to gravity in m/s^2
+    return_violations: bool, optional
+        If True, return the grid and the locations of the grid cells where the CFL condition was enforced
+    
+    Returns
+    -------
+    grid: class:`Grid`
+        A grid ojbect with its values field limited 
+    violation_xy: np.ndarray, optional
+        The locations of the grid cells where the CFL condition was violated
+     
+    """
+    logger.log(logging.INFO, f"Enforcing the CFL condition for Courant number {courant_number}...")
+    # ensure the grid has values populated
+    assert grid.values is not np.nan, "The grid must have its values field populated"
+    
+    # Estimate wavespeed in ocean (second term represents orbital
+    # velocity at 0 degree phase for 1-m amp. wave).
+    x, y = grid.create_vectors()
+    # Interpolate the DEM onto the grid points
+    tmpz = dem.da.interp(x=x, y=y)
+
+    crs = grid.crs
+    # Limit the minimum depth to 1 m (ignore overland)
+    tmpz = tmpz.values.T
+    bound = np.abs(tmpz < 1)
+    tmpz[bound] = -1
+    u = np.sqrt(gravity*np.abs(tmpz)) + np.sqrt(gravity/np.abs(tmpz))
+    # if crs is not in meters, convert to meters
+    if crs == "EPSG:4326" or crs == 4326:
+        mean_latitude = np.mean(grid.bbox[2:])
+        meters_per_degree = (
+            111132.92
+            - 559.82 * np.cos(2 * mean_latitude)
+            + 1.175 * np.cos(4 * mean_latitude)
+            - 0.0023 * np.cos(6 * mean_latitude)
+        )
+        # compute degrees to meters factor 
+    elif crs.units == "feet":
+        raise NotImplementedError("Support for feet not yet implemented")
+        # TODO: add support for feet
+    
+    # resolve max. Cr violations
+    hh_m = grid.values.copy()
+    #  convert to meters if crs is in degrees
+    # TODO: add support for feet and other crs
+    hh_m *= meters_per_degree
+    Cr0 = (timestep * u) / hh_m # Courant number for given timestep and mesh size variations
+    logger.log(logging.INFO, f"Minimum Courant number: {np.min(Cr0)}")
+    logger.log(logging.INFO, f"Peak Courant number: {np.max(Cr0)}")
+    dxn_max = u * timestep / courant_number # NB: in meters
+
+    violations = Cr0 > courant_number   
+    # determine the locations of the violations
+    # cell centroids
+    X, Y = grid.create_grid()
+    # make sure violations indicies indices into Xc and Yc
+    violation_xy = np.column_stack((X[violations], Y[violations]))
+    # report the number of violations
+    percent_violations = np.sum(violations) / violations.size * 100 
+    logger.log(logging.INFO, f"Number of violations: {np.sum(violations)}, in percent {percent_violations:.2f}%")
+    hh_m[Cr0 > courant_number] = dxn_max[violations]
+
+    if crs == "EPSG:4326" or crs == 4326:
+        # convert back to degrees from meters
+        hh_m *= 1/meters_per_degree
+    elif crs.units == "feet":
+        # TODO: add support for feet
+        raise NotImplementedError("Support for feet not yet implemented")   
+    
+    grid.values = hh_m
+    grid.build_interpolant()
+    
+    if return_violations:
+        return grid, violation_xy
+    else:
+        return grid
 
 def wavelength_sizing_function(
     grid, 
@@ -41,7 +136,6 @@ def wavelength_sizing_function(
     max_edge_length=np.inf,
     period=12.42 * 3600,  # M2 period in seconds
     gravity=9.81,  # m/s^2
-    crs="EPSG:4326",
 ):
     """
     Mesh sizes that vary proportional to an estimate of the wavelength
@@ -64,7 +158,6 @@ def wavelength_sizing_function(
     gravity: float, optional
         The acceleration due to gravity in m/s^2
 
-
     Returns
     -------
     :class:`Grid` objectd
@@ -76,6 +169,8 @@ def wavelength_sizing_function(
     x, y = grid.create_vectors()
     # Interpolate the DEM onto the grid points
     tmpz = dem.da.interp(x=x, y=y)
+
+    crs = grid.crs
 
     if crs == "EPSG:4326" or crs == 4326:
         mean_latitude = np.mean(grid.bbox[2:])
@@ -125,6 +220,9 @@ def enforce_mesh_gradation(grid, gradation=0.05):
         logger.warning("Parameter `gradation` is set excessively high (> 0.30)")
 
     logger.info(f"Enforcing mesh size gradation of {gradation} decimal percent...")
+
+    # assert the values field is populated
+    assert grid.values is not np.nan, "The grid must have its values field populated"
 
     elen = grid.dx
     # TODO: add support for unequal grid spaces
