@@ -2,11 +2,10 @@ import logging
 
 import matplotlib.pyplot as plt
 import numpy as np
-import scipy.spatial
-from scipy.interpolate import RegularGridInterpolator
-import xarray as xr 
 import rioxarray
-
+import scipy.spatial
+import xarray as xr
+from scipy.interpolate import RegularGridInterpolator
 
 from .Region import Region
 
@@ -49,13 +48,7 @@ class Grid(Region):
     """
 
     def __init__(
-        self,
-        region,
-        dx,
-        dy=None,
-        values=np.nan,
-        extrapolate=False,
-        eval=None
+        self, region, dx, dy=None, values=np.nan, extrapolate=False, eval=None
     ):
         super().__init__(region.bbox, region.crs)
         self.dx = (
@@ -69,23 +62,23 @@ class Grid(Region):
         # and sometimes this is not possible for arbitrary dx and dy. So, we recompute the dx and dy
         # thus the user specified dx and dy may be different than the actual dx and dy
         _xvec, _yvec = self.create_vectors()
-        
+
         self._dx = _xvec[1] - _xvec[0]
         self._dy = _yvec[1] - _yvec[0]
 
         self.nx = len(_xvec)
         self.ny = len(_yvec)
-        
-        self.values = values # see setter method 
+
+        self.values = values  # see setter method
 
         self.eval = eval
 
     def __repr__(self):
-       return f"bbox={self.bbox}, dx={self.dx}, dy={self.dy}, crs={self.crs}), units={self.units}"
+        return f"bbox={self.bbox}, dx={self.dx}, dy={self.dy}, crs={self.crs}), units={self.units}"
 
     # create a method that converts the grid to a xarray dataset
     @classmethod
-    def from_xarray(self, da, band='data', crs='EPSG:4326', **kwargs):
+    def from_xarray(self, da, band="data", crs="EPSG:4326", **kwargs):
         """
         Convert an xarray data array to a :obj:`Grid` object
 
@@ -107,24 +100,31 @@ class Grid(Region):
         # if a dataset is passed in, then we need to extract the data array
         if isinstance(da, xr.Dataset):
             if len(da.data_vars) > 1:
-                raise ValueError("More than one data variable found in xarray dataset. Please specify the band to read in.")
+                raise ValueError(
+                    "More than one data variable found in xarray dataset. Please specify the band to read in."
+                )
             band = list(da.data_vars)[0]
             da = da[band]
         # determine the bbox & crs from the xarray dataset
-        _bbox = (float(da.x.min().values), float(da.x.max().values), float(da.y.min().values), float(da.y.max().values))
+        _bbox = (
+            float(da.x.min().values),
+            float(da.x.max().values),
+            float(da.y.min().values),
+            float(da.y.max().values),
+        )
         _crs = da.rio.crs
         if _crs is None:
             logging.info("No crs found in xarray dataset. Using default crs: EPSG:4326")
             _crs = crs
         _region = Region(_bbox, _crs)
-        # determine the dx and dy 
+        # determine the dx and dy
         _dx = abs(float(da.x[1] - da.x[0].values))
         _dy = abs(float(da.y[1] - da.y[0].values))
         # create the grid object
         grid = Grid(_region, dx=_dx, dy=_dy, **kwargs)
-        
+
         grid.values = da.values.T
-        
+
         return grid
 
     @property
@@ -156,10 +156,14 @@ class Grid(Region):
         if np.isscalar(data):
             data = np.full((self.nx, self.ny), data)
         elif data.shape != (self.nx, self.ny):
-            raise ValueError(f"Data shape does not match grid dimensions: {data.shape} != ({self.nx}, {self.ny})")
+            raise ValueError(
+                f"Data shape does not match grid dimensions: {data.shape} != ({self.nx}, {self.ny})"
+            )
         # print a warning if there are NaNs in the data
         if np.isnan(data).any() and not np.isnan(data).all():
-            logger.warning("WARNING: NaNs found in data contained in grid object's values. Interpolation may be inaccurate.")
+            logger.warning(
+                "WARNING: NaNs found in data contained in grid object's values. Interpolation may be inaccurate."
+            )
         self.__values = data
 
     @staticmethod
@@ -170,17 +174,17 @@ class Grid(Region):
         return np.concatenate(
             [arr[0, :-1], arr[:-1, -1], arr[-1, ::-1], arr[-2:0:-1, 0]], axis=0
         )
-    
-    def get_centroids(self): 
-        '''
+
+    def get_centroids(self):
+        """
         Get the centroids of the grid cells
-        '''
+        """
         X, Y = self.create_grid()
         Xc = (X[1:, 1:] + X[:-1, :-1]) / 2
         Yc = (Y[1:, 1:] + Y[:-1, :-1]) / 2
-        return Xc, Yc 
-    
-    # create a copy method 
+        return Xc, Yc
+
+    # create a copy method
     def copy(self):
         """
         Create a copy of the :obj:`Grid` object
@@ -196,7 +200,6 @@ class Grid(Region):
 
         """
         return Grid(self, self.dx, self.dy, self.values, self.extrapolate, self.eval)
-    
 
     def create_vectors(self):
         """
@@ -217,7 +220,7 @@ class Grid(Region):
         # estimate nx and ny based on user supplied dx and dy
         _nx = int(np.floor((self.bbox[1] - self.bbox[0]) / self.dx)) + 1
         _ny = int(np.floor((self.bbox[3] - self.bbox[2]) / self.dy)) + 1
-        
+
         x = np.linspace(self.bbox[0], self.bbox[1], _nx)
         y = np.flipud(np.linspace(self.bbox[2], self.bbox[3], _ny))
         return x, y
@@ -288,7 +291,7 @@ class Grid(Region):
         take precedence elsewhere grid2 values are retained.
 
         Grid3 has dx & dy spacings following the resolution of grid2.
-        
+
         Parameters
         ----------
         grid2: :obj:`Grid`
@@ -384,16 +387,24 @@ class Grid(Region):
             horizontalalignment="right",
             verticalalignment="top",
             transform=ax.transAxes,
-            fontsize=6, 
-            bbox=dict(facecolor='lightgray', alpha=0.5, edgecolor='none'),
+            fontsize=6,
+            bbox=dict(facecolor="lightgray", alpha=0.5, edgecolor="none"),
         )
-        # if all values are nan then put a text box in red in the middle 
-        # of the figure saying no data 
+        # if all values are nan then put a text box in red in the middle
+        # of the figure saying no data
         if np.isnan(self.values).all():
             _xvec, _yvec = self.create_vectors()
             xmid = np.mean(_xvec)
             ymid = np.mean(_yvec)
-            ax.text(xmid, ymid, 'NO DATA', horizontalalignment='center', verticalalignment='center', color='red', fontsize=20)
+            ax.text(
+                xmid,
+                ymid,
+                "NO DATA",
+                horizontalalignment="center",
+                verticalalignment="center",
+                color="red",
+                fontsize=20,
+            )
 
         if xlabel is not None:
             ax.set_xlabel(xlabel)
@@ -408,7 +419,7 @@ class Grid(Region):
 
         if cbarlabel is not None:
             plot_colorbar = True
-            
+
         if plot_colorbar or cbarlabel:
             cbar = fig.colorbar(pc)
             cbar.set_label(cbarlabel)
@@ -417,7 +428,7 @@ class Grid(Region):
             plt.savefig(filename)
         if holding is False:
             plt.show()
-            
+
         return ax
 
     def build_interpolant(self):
@@ -468,7 +479,7 @@ class Grid(Region):
 
         """
         x, y = self.create_vectors()
-        #xg, yg = self.create_grid()
+        # xg, yg = self.create_grid()
         da = xr.Dataset(
             {
                 "data": (["y", "x"], self.values.T),

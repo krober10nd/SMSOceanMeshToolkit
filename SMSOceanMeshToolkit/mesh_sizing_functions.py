@@ -1,26 +1,24 @@
-'''
+"""
 Mesh sizing functions
-'''
+"""
 # stdlib
 import logging
 
 # tpl
 import geopandas as gpd
 import numpy as np
+import scipy.spatial
+import skfmm  # fast marching method
 from inpoly import inpoly2
 from shapely.geometry import LineString
-import numpy as np
-import scipy.spatial
 from skimage.morphology import medial_axis
-import skfmm # fast marching method
 
 # from SMSOceanMeshToolkit/local
 from .edges import get_poly_edges
-from .Region import Region
 from .Grid import Grid
-from .signed_distance_function import signed_distance_function
-
 from .libs._HamiltonJacobi import gradient_limit
+from .Region import Region
+from .signed_distance_function import signed_distance_function
 
 logger = logging.getLogger(__name__)
 
@@ -34,13 +32,16 @@ __all__ = [
     "enforce_CFL_condition",
 ]
 
-def enforce_CFL_condition(grid, dem, timestep, courant_number=0.5, gravity=9.81, return_violations=False):
+
+def enforce_CFL_condition(
+    grid, dem, timestep, courant_number=0.5, gravity=9.81, return_violations=False
+):
     """
     Enforce the Courant-Friedrichs-Lewy condition on a :class:`grid`
-    assuming shallow water wave speed `max_speed` + max_speed and an acceptable 
+    assuming shallow water wave speed `max_speed` + max_speed and an acceptable
     Courant number `cr`.
-    
-    Parameters 
+
+    Parameters
     ----------
     grid: :class:`Grid`
         A grid object with its values field populated to be limited
@@ -54,19 +55,22 @@ def enforce_CFL_condition(grid, dem, timestep, courant_number=0.5, gravity=9.81,
         The acceleration due to gravity in m/s^2
     return_violations: bool, optional
         If True, return the grid and the locations of the grid cells where the CFL condition was enforced
-    
+
     Returns
     -------
     grid: class:`Grid`
-        A grid ojbect with its values field limited 
+        A grid ojbect with its values field limited
     violation_xy: np.ndarray, optional
         The locations of the grid cells where the CFL condition was violated
-     
+
     """
-    logger.log(logging.INFO, f"Enforcing the CFL condition for Courant number {courant_number}...")
+    logger.log(
+        logging.INFO,
+        f"Enforcing the CFL condition for Courant number {courant_number}...",
+    )
     # ensure the grid has values populated
     assert grid.values is not np.nan, "The grid must have its values field populated"
-    
+
     # Estimate wavespeed in ocean (second term represents orbital
     # velocity at 0 degree phase for 1-m amp. wave).
     x, y = grid.create_vectors()
@@ -78,7 +82,7 @@ def enforce_CFL_condition(grid, dem, timestep, courant_number=0.5, gravity=9.81,
     tmpz = tmpz.values.T
     bound = np.abs(tmpz < 1)
     tmpz[bound] = -1
-    u = np.sqrt(gravity*np.abs(tmpz)) + np.sqrt(gravity/np.abs(tmpz))
+    u = np.sqrt(gravity * np.abs(tmpz)) + np.sqrt(gravity / np.abs(tmpz))
     # if crs is not in meters, convert to meters
     if crs == "EPSG:4326" or crs == 4326:
         mean_latitude = np.mean(grid.bbox[2:])
@@ -88,51 +92,57 @@ def enforce_CFL_condition(grid, dem, timestep, courant_number=0.5, gravity=9.81,
             + 1.175 * np.cos(4 * mean_latitude)
             - 0.0023 * np.cos(6 * mean_latitude)
         )
-        # compute degrees to meters factor 
+        # compute degrees to meters factor
     elif crs.units == "feet":
         raise NotImplementedError("Support for feet not yet implemented")
         # TODO: add support for feet
-    
+
     # resolve max. Cr violations
     hh_m = grid.values.copy()
     #  convert to meters if crs is in degrees
     # TODO: add support for feet and other crs
     hh_m *= meters_per_degree
-    Cr0 = (timestep * u) / hh_m # Courant number for given timestep and mesh size variations
+    Cr0 = (
+        timestep * u
+    ) / hh_m  # Courant number for given timestep and mesh size variations
     logger.log(logging.INFO, f"Minimum Courant number: {np.min(Cr0)}")
     logger.log(logging.INFO, f"Peak Courant number: {np.max(Cr0)}")
-    dxn_max = u * timestep / courant_number # NB: in meters
+    dxn_max = u * timestep / courant_number  # NB: in meters
 
-    violations = Cr0 > courant_number   
+    violations = Cr0 > courant_number
     # determine the locations of the violations
     # cell centroids
     X, Y = grid.create_grid()
     # make sure violations indicies indices into Xc and Yc
     violation_xy = np.column_stack((X[violations], Y[violations]))
     # report the number of violations
-    percent_violations = np.sum(violations) / violations.size * 100 
-    logger.log(logging.INFO, f"Number of violations: {np.sum(violations)}, in percent {percent_violations:.2f}%")
+    percent_violations = np.sum(violations) / violations.size * 100
+    logger.log(
+        logging.INFO,
+        f"Number of violations: {np.sum(violations)}, in percent {percent_violations:.2f}%",
+    )
     hh_m[Cr0 > courant_number] = dxn_max[violations]
 
     if crs == "EPSG:4326" or crs == 4326:
         # convert back to degrees from meters
-        hh_m *= 1/meters_per_degree
+        hh_m *= 1 / meters_per_degree
     elif crs.units == "feet":
         # TODO: add support for feet
-        raise NotImplementedError("Support for feet not yet implemented")   
-    
+        raise NotImplementedError("Support for feet not yet implemented")
+
     grid.values = hh_m
     grid.build_interpolant()
-    
+
     if return_violations:
         return grid, violation_xy
     else:
         return grid
 
+
 def wavelength_sizing_function(
-    grid, 
+    grid,
     dem,
-    wl=10, 
+    wl=10,
     max_edge_length=np.inf,
     period=12.42 * 3600,  # M2 period in seconds
     gravity=9.81,  # m/s^2
@@ -181,9 +191,9 @@ def wavelength_sizing_function(
             - 0.0023 * np.cos(6 * mean_latitude)
         )
     tmpz = tmpz.values.T
-    tmpz[np.abs(tmpz) < 1] # avoid division by zero
+    tmpz[np.abs(tmpz) < 1]  # avoid division by zero
     # Calculate the wavelength of a wave with period `period` and
-    # acceleration due to gravity `gravity`  
+    # acceleration due to gravity `gravity`
     grid.values = period * np.sqrt(gravity * np.abs(tmpz)) / wl
 
     # Convert back to degrees from meters (if geographic)
@@ -233,7 +243,7 @@ def enforce_mesh_gradation(grid, gradation=0.05):
     sz = cell_size.shape
     sz = (sz[0], sz[1], 1)
     cell_size = cell_size.flatten("F")
-    MAXITER = 10000 # maximum number of iterations in cpp code 
+    MAXITER = 10000  # maximum number of iterations in cpp code
     # NB: cell_size is in units of the grid's crs
     tmp = gradient_limit([*sz], elen, gradation, MAXITER, cell_size)
     tmp = np.reshape(tmp, (sz[0], sz[1]), "F")
@@ -245,7 +255,7 @@ def enforce_mesh_gradation(grid, gradation=0.05):
 
 
 def feature_sizing_function(
-    grid, 
+    grid,
     coastal_geometry,
     number_of_elements_per_width=3,
     max_edge_length=np.inf,
@@ -275,18 +285,20 @@ def feature_sizing_function(
     """
 
     logger.info("Building a feature sizing function...")
-    assert number_of_elements_per_width > 0, "local feature size  must be greater than 0"
-    
-    # create a Region 
+    assert (
+        number_of_elements_per_width > 0
+    ), "local feature size  must be greater than 0"
+
+    # create a Region
     region = Region(coastal_geometry.bbox, grid.crs)
-    
+
     # form a signed distance function from the coastal geometry
     my_signed_distance_function = signed_distance_function(coastal_geometry)
 
     min_edge_length = coastal_geometry.minimum_mesh_size
     # The medial axis calculation requires a finer grid than the final grid by a factor of 2x
     grid_calc = Grid(
-        region, 
+        region,
         dx=min_edge_length / 2.0,  # dx is half that of the original shoreline spacing
         values=0.0,
         extrapolate=True,
@@ -294,7 +306,7 @@ def feature_sizing_function(
     x, y = grid_calc.create_grid()
     qpts = np.column_stack((x.flatten(), y.flatten()))
     phi = my_signed_distance_function.eval(qpts)
-    # outside 
+    # outside
     phi[phi > 0] = 999
     # inside and on the boundary
     phi[phi <= 0] = 1.0
@@ -338,16 +350,17 @@ def feature_sizing_function(
 
     grid.extrapolate = True
     grid.build_interpolant()
-    
+
     # enforce mesh gradation
     grid = enforce_mesh_gradation(grid, gradation=gradation)
-    
+
     return grid
 
 
 def _line_to_points_array(line):
     """Convert a shapely LineString to a numpy array of points"""
     return np.array(line.coords)
+
 
 def _resample_line(row, min_edge_length):
     """Resample a line to a minimum mesh size length"""
@@ -379,7 +392,7 @@ def distance_sizing_from_linestring_function(
     line_file: str or Path
         Path to a vector file containing LineString(s)
     min_edge_length: float
-        The minimum edge length desired in the mesh. Must be in the units 
+        The minimum edge length desired in the mesh. Must be in the units
         of the grid's crs
     rate: float
         The decimal mesh expansion rate from the line(s).
@@ -428,7 +441,7 @@ def distance_sizing_from_linestring_function(
         dis = np.abs(skfmm.distance(phi, [grid._dx, grid._dy]))
     except ValueError:
         logger.info("0-level set not found in domain or grid malformed")
-        dis = np.zeros((grid.nx, grid.ny)) + 999.
+        dis = np.zeros((grid.nx, grid.ny)) + 999.0
     tmp = min_edge_length + dis * rate
     if max_edge_length is not np.inf:
         tmp[tmp > max_edge_length] = max_edge_length
@@ -436,14 +449,15 @@ def distance_sizing_from_linestring_function(
     grid.build_interpolant()
     return grid
 
+
 def distance_sizing_from_point_function(
-    grid, 
+    grid,
     point_file,
     min_edge_length,
     rate=0.15,
     max_edge_length=np.inf,
 ):
-    '''
+    """
     Mesh sizes that vary linearly at `rate` from a point or points
     contained within a dataframe.
 
@@ -463,7 +477,7 @@ def distance_sizing_from_point_function(
     grid: class:`Grid`
         A grid ojbect with its values field populated with distance sizing
 
-    '''
+    """
 
     logger.info("Building a distance sizing from point(s) function...")
     assert isinstance(grid, Grid), "A grid object must be provided"
@@ -500,14 +514,14 @@ def distance_sizing_from_point_function(
 
 
 def distance_sizing_function(
-    grid, 
+    grid,
     coastal_geometry,
     rate=0.15,
     max_edge_length=np.inf,
 ):
     """
     Mesh sizes that vary linearly at `rate` from coordinates in `obj`:CoastalGeometry
-    
+
     Parameters
     ----------
     grid: class:`Grid`
@@ -558,7 +572,7 @@ def distance_sizing_function(
     tmp = coastal_geometry.minimum_mesh_size + dis * rate
     if max_edge_length is not np.inf:
         tmp[tmp > max_edge_length] = max_edge_length
-    #grid.values = np.ma.array(tmp, mask=mask)
+    # grid.values = np.ma.array(tmp, mask=mask)
     grid.values = np.array(tmp)
     grid.build_interpolant()
     return grid

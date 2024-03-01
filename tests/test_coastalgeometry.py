@@ -1,6 +1,7 @@
 import matplotlib.pyplot as plt
 import matplotlib
-matplotlib.use('Agg')
+
+matplotlib.use("Agg")
 
 import SMSOceanMeshToolkit as smsom
 import logging
@@ -9,10 +10,16 @@ import geopandas as gpd
 
 logging.basicConfig(stream=sys.stdout, level=logging.WARNING)
 
+
 def test_bounding_box_with_different_mesh_sizes():
     bounding_box = (-83.22137037, -82.5754578, 41.32025057, 41.89550398)
     vector_data = "data/Lk_erie_Lk_st_clair_shoreline_polygons.shp"
-    for minimum_mesh_size in (1000.0 / 111e3, 500.0 / 111e3, 100.0 / 111e3, 50.0 / 111e3):
+    for minimum_mesh_size in (
+        1000.0 / 111e3,
+        500.0 / 111e3,
+        100.0 / 111e3,
+        50.0 / 111e3,
+    ):
         shoreline = smsom.CoastalGeometry(
             vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
         )
@@ -20,11 +27,17 @@ def test_bounding_box_with_different_mesh_sizes():
         gdf = shoreline.to_geodataframe()
         assert isinstance(gdf, gpd.GeoDataFrame)
         plt.close()
+
 
 def test_bounding_polygon_with_different_mesh_sizes():
     bounding_box = "data/my_test_bounding_polygon.shp"
     vector_data = "data/Lk_erie_Lk_st_clair_shoreline_polygons.shp"
-    for minimum_mesh_size in (1000.0 / 111e3, 500.0 / 111e3, 100.0 / 111e3, 50.0 / 111e3):
+    for minimum_mesh_size in (
+        1000.0 / 111e3,
+        500.0 / 111e3,
+        100.0 / 111e3,
+        50.0 / 111e3,
+    ):
         shoreline = smsom.CoastalGeometry(
             vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
         )
@@ -33,10 +46,16 @@ def test_bounding_polygon_with_different_mesh_sizes():
         assert isinstance(gdf, gpd.GeoDataFrame)
         plt.close()
 
+
 def test_bounding_polygon_with_moving_window_smoothing():
     bounding_box = "data/my_test_bounding_polygon.shp"
     vector_data = "data/Lk_erie_Lk_st_clair_shoreline_polygons.shp"
-    for minimum_mesh_size in (1000.0 / 111e3, 500.0 / 111e3, 100.0 / 111e3, 50.0 / 111e3):
+    for minimum_mesh_size in (
+        1000.0 / 111e3,
+        500.0 / 111e3,
+        100.0 / 111e3,
+        50.0 / 111e3,
+    ):
         shoreline = smsom.CoastalGeometry(
             vector_data,
             bounding_box,
@@ -48,12 +67,13 @@ def test_bounding_polygon_with_moving_window_smoothing():
         )
         shoreline.plot()
         gdf = shoreline.to_geodataframe()
-        #gdf.to_file("smoothed.shp")
+        # gdf.to_file("smoothed.shp")
         assert isinstance(gdf, gpd.GeoDataFrame)
         plt.close()
 
+
 if __name__ == "__main__":
     # for debugging
-    #test_bounding_box_with_different_mesh_sizes()
-    #test_bounding_polygon_with_different_mesh_sizes()
+    # test_bounding_box_with_different_mesh_sizes()
+    # test_bounding_polygon_with_different_mesh_sizes()
     test_bounding_polygon_with_moving_window_smoothing()

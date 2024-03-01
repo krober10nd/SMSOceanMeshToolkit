@@ -1,15 +1,17 @@
 from pathlib import Path
-import xarray as xr
+
 import rioxarray as rxr
+import xarray as xr
 
 __all__ = ["DEM"]
+
 
 class DEM:
     """
     Digitial elevation model read in from a tif or NetCDF file
     """
 
-    def __init__(self, dem_filename, ll_ur=None, band='data'):
+    def __init__(self, dem_filename, ll_ur=None, band="data"):
         """
         Read in a digitial elevation model for later use
         in developing mesh sizing functions.
@@ -27,26 +29,26 @@ class DEM:
 
         if isinstance(dem_filename, str):
             dem_filename = Path(dem_filename)
-        # check if file exists 
+        # check if file exists
         if not dem_filename.exists():
             raise FileNotFoundError(f"File {dem_filename} does not exist")
-        self.da = rxr.open_rasterio(dem_filename, masked=True).squeeze().drop('band')
-        # check for the crs 
+        self.da = rxr.open_rasterio(dem_filename, masked=True).squeeze().drop("band")
+        # check for the crs
         if "crs" not in self.da.attrs:
             # assign geographic crs
             self.da.rio.write_crs("EPSG:4326", inplace=True)
-        
+
         # TODO: catch other cases
         # if lon is dimension rename to longitude
-        if 'lat' in self.da.dims:
-            self.da = self.ds.rename({'lat':'y'})
-        if 'latitude' in self.da.dims:
-            self.da = self.ds.rename({'latitude':'y'})
-        if 'lon' in self.da.dims:
-            self.da = self.ds.rename({'lon':'x'})
-        if 'longitude' in self.da.dims:
-            self.da = self.ds.rename({'longitude':'x'})
-        
+        if "lat" in self.da.dims:
+            self.da = self.ds.rename({"lat": "y"})
+        if "latitude" in self.da.dims:
+            self.da = self.ds.rename({"latitude": "y"})
+        if "lon" in self.da.dims:
+            self.da = self.ds.rename({"lon": "x"})
+        if "longitude" in self.da.dims:
+            self.da = self.ds.rename({"longitude": "x"})
+
         # clip the data to the region of interest
         if ll_ur is not None:
             self = self.clip(ll_ur)
@@ -64,12 +66,10 @@ class DEM:
         # assumes the data has latitude and longitude dimensions
         self.da = self.da.rio.clip_box(min_x, min_y, max_x, max_y)
         return self
-    
-    # plot method 
+
+    # plot method
     def plot(self, ax=None, **kwargs):
         """
         Plot the DEM
         """
         return self.da.plot(ax=ax, **kwargs)
-        
-    

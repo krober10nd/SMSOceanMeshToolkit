@@ -1,6 +1,6 @@
-import numpy as np 
+import numpy as np
 
-__all__ = ['get_poly_edges']
+__all__ = ["get_poly_edges"]
 
 nan = np.nan
 

@@ -1,7 +1,7 @@
 """
 Tests for mesh sizing functions
 """
-import sys, os 
+import sys, os
 import logging
 
 import SMSOceanMeshToolkit as smsom
@@ -15,25 +15,27 @@ logging.basicConfig(
     stream=sys.stdout,
 )
 
-def test_cfl_limiter(): 
+
+def test_cfl_limiter():
     ll_ur = (-77.57055207, -68.48959314, 38.53170370, 41.59774855)
     fname = "data/bathy_SSG_1_120_clip.nc"
     region = smsom.Region(ll_ur, crs="EPSG:4326")
     dem = smsom.DEM(fname, ll_ur=ll_ur)
     grid = smsom.Grid(region, dx=500 / 111e3)
-    szfx1 = smsom.wavelength_sizing_function(
-        grid, dem, wl=1000.0
-    )  
-    TIMESTEP=10.0
-    szfx2, violations_xy = smsom.enforce_CFL_condition(szfx1, 
-                                                   dem, 
-                                                   TIMESTEP, 
-                                                   courant_number=0.45,
-                                                   return_violations=True)
-    
-    ax= szfx1.plot(plot_colorbar=True, cbarlabel=f"Mesh sizing function ({grid.units})", holding=True)
-    ax.plot(*violations_xy.T, 'ro')
+    szfx1 = smsom.wavelength_sizing_function(grid, dem, wl=1000.0)
+    TIMESTEP = 10.0
+    szfx2, violations_xy = smsom.enforce_CFL_condition(
+        szfx1, dem, TIMESTEP, courant_number=0.45, return_violations=True
+    )
+
+    ax = szfx1.plot(
+        plot_colorbar=True,
+        cbarlabel=f"Mesh sizing function ({grid.units})",
+        holding=True,
+    )
+    ax.plot(*violations_xy.T, "ro")
     plt.savefig("cfl_limiter.png", dpi=300, bbox_inches="tight")
+
 
 def test_wavelength_sizing_function():
     ll_ur = (-77.57055207, -68.48959314, 38.53170370, 41.59774855)
@@ -44,9 +46,13 @@ def test_wavelength_sizing_function():
     szfx = smsom.wavelength_sizing_function(
         grid, dem, wl=100
     )  # , max_edge_length=10000.0 / 111e3)
-    szfx.plot(plot_colorbar=True, cbarlabel=f"Mesh sizing function ({grid.units})", holding=True)
+    szfx.plot(
+        plot_colorbar=True,
+        cbarlabel=f"Mesh sizing function ({grid.units})",
+        holding=True,
+    )
     plt.savefig("wavelength_sizing_function.png", dpi=300, bbox_inches="tight")
-    #plt.show()
+    # plt.show()
     plt.close()
 
 
@@ -62,7 +68,9 @@ def test_feature_sizing_function():
         vector_data, bounding_box, minimum_mesh_size, crs="EPSG:4326"
     )
     szfx = smsom.feature_sizing_function(
-        grid, shoreline, number_of_elements_per_width=3, 
+        grid,
+        shoreline,
+        number_of_elements_per_width=3,
     )
     print(szfx)
 
@@ -88,7 +96,7 @@ def test_distance_sizing_function():
     szfx = smsom.distance_sizing_function(
         grid, shoreline, rate=0.10, max_edge_length=1000.0 / 111e3
     )
-    ax, _ = szfx.plot(
+    ax = szfx.plot(
         plot_colorbar=True,
         cbarlabel=f"Distance from shoreline ({grid.units})",
         holding=True,
@@ -107,7 +115,7 @@ def test_distance_form_linestring():
         grid, linestrings, min_edge_length
     )
     gdf = gpd.read_file(linestrings)
-    ax, _ = szfx.plot(
+    ax = szfx.plot(
         holding=True,
         plot_colorbar=True,
         cbarlabel=f"Distance from linestring ({grid.units})",
@@ -126,7 +134,7 @@ def test_distance_from_points():
         grid, points, min_edge_length, max_edge_length=100.0 / 111e3
     )
     gdf = gpd.read_file(points)
-    fig, ax, _ = szfx.plot(
+    ax = szfx.plot(
         holding=True,
         plot_colorbar=True,
         cbarlabel=f"Distance from points ({grid.units})",
@@ -138,7 +146,7 @@ def test_distance_from_points():
 
 if __name__ == "__main__":
     test_cfl_limiter()
-    #test_wavelength_sizing_function()
+    # test_wavelength_sizing_function()
     # test_feature_sizing_function()
     # test_distance_sizing_function()
     # test_distance_form_linestring()
