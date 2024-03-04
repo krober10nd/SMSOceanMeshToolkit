@@ -15,6 +15,7 @@ from .mesh_sizing_functions import (distance_sizing_from_linestring_function,
                                     wavelength_sizing_function)
 from .Region import Region
 from .signed_distance_function import signed_distance_function
+from .edges import get_boundary_edges, get_edges, get_winded_boundary_edges
 
 __all__ = [
     "Region",
@@ -41,4 +42,7 @@ __all__ = [
     "mesh_clean",
     "unique_rows",
     "fix_mesh",
+    "get_edges",
+    "get_boundary_edges",
+    "get_winded_boundary_edges",
 ]

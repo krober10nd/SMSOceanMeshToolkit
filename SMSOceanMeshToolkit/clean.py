@@ -4,6 +4,8 @@ import logging
 import numpy as np
 import scipy.sparse as spsparse
 
+import warnings
+
 from . import edges
 
 logger = logging.getLogger(__name__)
