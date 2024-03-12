@@ -26,12 +26,37 @@ __all__ = [
     "distance_sizing_function",
     "distance_sizing_from_point_function",
     "distance_sizing_from_linestring_function",
+    "combine_sizing_functions",
     "feature_sizing_function",
     "enforce_mesh_gradation",
     "wavelength_sizing_function",
     "enforce_CFL_condition",
 ]
 
+def combine_sizing_functions(sizing_functions, operation='min'): 
+    '''
+    Parameters 
+    ----------
+    sizing_functions: list
+        A list of :class:`Grid` objects
+    operation: str, optional
+        The operation to perform on the sizing functions.
+    
+    Returns 
+    -------
+    combined_szfx: :class:`Grid`
+        A grid object with its values field populated with the combined sizing functions
+    '''
+    # copy the first sizing function to a new Grid 
+    combined_szfx = sizing_functions[0].copy()
+    for szfx in sizing_functions[1:]: 
+        if operation == 'min': 
+            combined_szfx.values = np.minimum(combined_szfx.values, szfx.values)
+        elif operation == 'max': 
+            combined_szfx.values = np.maximum(combined_szfx.values, szfx.values)
+        else: 
+            raise ValueError(f"Unsupported operation: {operation}")
+    return combined_szfx
 
 def enforce_CFL_condition(
     grid, dem, timestep, courant_number=0.5, gravity=9.81, return_violations=False
@@ -175,7 +200,8 @@ def wavelength_sizing_function(
 
     """
     logger.info("Building a wavelength sizing function...")
-
+    assert isinstance(grid, Grid), "A grid object must be provided"
+    grid = grid.copy()
     x, y = grid.create_vectors()
     # Interpolate the DEM onto the grid points
     tmpz = dem.da.interp(x=x, y=y)
@@ -288,7 +314,8 @@ def feature_sizing_function(
     assert (
         number_of_elements_per_width > 0
     ), "local feature size  must be greater than 0"
-
+    assert isinstance(grid, Grid), "A grid object must be provided"
+    grid = grid.copy()
     # create a Region
     region = Region(coastal_geometry.bbox, grid.crs)
 
@@ -407,6 +434,7 @@ def distance_sizing_from_linestring_function(
     logger.info("Building a distance mesh sizing function from a LineString(s)...")
     # check a grid is provided
     assert isinstance(grid, Grid), "A grid object must be provided"
+    grid = grid.copy()
     line_geodataframe = gpd.read_file(line_file)
     # check all the geometries are linestrings
     assert all(
@@ -481,6 +509,7 @@ def distance_sizing_from_point_function(
 
     logger.info("Building a distance sizing from point(s) function...")
     assert isinstance(grid, Grid), "A grid object must be provided"
+    grid = grid.copy()
     point_geodataframe = gpd.read_file(point_file)
     assert all(
         point_geodataframe.geometry.geom_type == "Point"
@@ -539,7 +568,7 @@ def distance_sizing_function(
         A sizing function that takes a point and returns a value
     """
     logger.info("Building a distance mesh sizing function...")
-
+    grid = grid.copy()
     # create phi (-1 where coastal vector intersects grid points 1 elsewhere)
     phi = np.ones(shape=(grid.nx, grid.ny))
     lon, lat = grid.create_grid()
@@ -551,7 +580,12 @@ def distance_sizing_function(
     if len(points) > 0:
         try:
             in_boubox, _ = inpoly2(points, boubox, e_box)
-            points = points[in_boubox]
+            # keep the majority of the points
+            percent_in = (len(points[in_boubox]) / len(points)) * 100
+            percent_out = 100 - percent_in
+            if percent_out > percent_in: 
+                logger.info("INFO: inverting the domain...")
+                in_boubox = ~in_boubox
 
             qpts = np.column_stack((lon.flatten(), lat.flatten()))
             in_boubox, _ = inpoly2(qpts, boubox, e_box)

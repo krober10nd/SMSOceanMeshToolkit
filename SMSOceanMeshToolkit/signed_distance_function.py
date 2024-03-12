@@ -11,7 +11,7 @@ from inpoly import inpoly2
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 
-from .geospatial_data import CoastalGeometry, _create_boubox
+from .geospatial_data import CoastalGeometry
 
 logger = logging.getLogger(__name__)
 
@@ -98,22 +98,25 @@ def _plot(geo, grid_size=100):
 
     # Adding a colorbar for the signed distance
     cb = plt.colorbar(p, ax=ax, boundaries=bounds)
-    # set the x and y limi
+    # set the x and y limit
     ax.set_xlim(x_min, x_max)
     ax.set_ylim(y_min, y_max)
+    ax.set_aspect("equal")
 
     cb.set_label("Signed Distance")
 
-    plt.title("Signed Distance Function \n $\Omega$ is hatched")
+    plt.title("Signed Distance Function \n $\Omega$ is shaded")
 
     return ax
 
 
 class SDFDomain:
-    def __init__(self, bbox, func, covering=None):
+    ''' 
+    Simple class to represent a signed distance function domain
+    '''
+    def __init__(self, bbox, func):
         self.bbox = bbox
         self.domain = func
-        self.covering = covering
 
     def eval(self, x):
         return self.domain(x)
@@ -170,7 +173,9 @@ def signed_distance_function(coastal_geometry, invert=False):
     Takes a :class:`CoastalGeometry` object containing labeled polygons representing meshing boundaries
     and creates a callable signed distance function that is used during mesh generation.
     The signed distance function returns a negative value if the point is inside the domain
-    and a positive value if the point is outside the domain.
+    and a positive value if the point is outside the domain. Consequently, points with 
+    0 value are on the boundary of the domain.
+
     The returned function `func` becomes a method of the :class:`Domain` and is queried during
     mesh generation several times per meshing iteration.
 
@@ -180,7 +185,8 @@ def signed_distance_function(coastal_geometry, invert=False):
         The processed data from :class:`CoastalGeometry` either in the
         form of a Python class or a GeoDataFrame.
     invert: boolean, optional
-        Invert the definition of the domain.
+        Invert the definition of the domain. Can be useful 
+        if the region meshed appears to be the water body instead of the land.
 
     Returns
     -------
@@ -205,66 +211,55 @@ def signed_distance_function(coastal_geometry, invert=False):
         region_polygon = coastal_geometry[coastal_geometry["labels"] == "outer"]
         region_polygon = polygons_to_numpy(region_polygon)
 
+        boubox = coastal_geometry[coastal_geometry["labels"] == "boubox"]
+        boubox = polygons_to_numpy(boubox)
+
     elif isinstance(coastal_geometry, CoastalGeometry):
+
         bbox = coastal_geometry.bbox
+        boubox = coastal_geometry.boubox
         inner = coastal_geometry.inner
         region_polygon = coastal_geometry.region_polygon
 
-    # create a bounding box for the domain
-    boubox = _create_boubox(bbox)
     # add a row of nans to separate the polygons
     boubox = np.vstack((boubox, np.array([nan, nan])))
     boubox = np.asarray(boubox)
     e_box = get_poly_edges(boubox)
 
-    # combine the inner and mainland polygons
-    # handle case of no inner
+    # combine the inner and region polygons (if they exist)
     if inner is None:
         poly = region_polygon
     else:
         # region_polygon is outer boundary
         poly = np.vstack((inner, region_polygon))
-    # create a kdtree for fast nearest neighbor search
+
+    # create a kdtree for nearest neighbor search for SDF
     tree = scipy.spatial.cKDTree(
-        poly[~np.isnan(poly[:, 0]), :], balanced_tree=False, leafsize=50
+        poly[~np.isnan(poly[:, 0]), :] 
     )
     # edges of the polygon
     e = get_poly_edges(poly)
 
     def func(x):
         # Initialize d with some positive number larger than geps
-        dist = np.zeros(len(x)) + 1.0
+        dist = np.zeros(len(x)) + 999.0
+        # all points are assumed to be outside the domain
+        inside = np.zeros(len(x), dtype=bool)
         # are points inside the polygon (boubox) indicating the domain?
         in_boubox, _ = inpoly2(x, boubox, e_box)
-        # are points inside any of the polygons representing the shoreline?
-        in_shoreline, _ = inpoly2(x, np.nan_to_num(poly), e)
-        # compute nearest distance to shoreline (operate in parallel workers=-1)
-        d, _ = tree.query(x, k=1, workers=-1)
-        # d is signed negative if inside the
-        # intersection of two areas and vice versa.
-        cond = np.logical_and(in_shoreline, in_boubox)
-        dist = (-1) ** (cond) * d
+        # points outside the boubox are not inside the domain
+        inside[in_boubox] = True
+        # Of the points that are inside the boubox, determine which are also 
+        # inside the multi-polygon representing the domain
+        in_shoreline, _ = inpoly2(x[in_boubox], poly, e)
         if invert:
-            dist *= -1
-        return dist
-
-    poly2 = boubox
-    # TODO: investigate performance by modifying the leafsize & balanced_tree
-    tree2 = scipy.spatial.cKDTree(
-        poly2[~np.isnan(poly2[:, 0]), :],  # balanced_tree=False, leafsize=50
-    )
-
-    # this callback is used for multiscale meshing
-    def func_covering(x):
-        # Initialize d with some positive number larger than geps
-        dist = np.zeros(len(x)) + 1.0
-        # are points inside the boubox?
-        in_boubox, _ = inpoly2(x, boubox, e_box)
-        # compute dist to shoreline
-        d, _ = tree2.query(x, k=1, workers=-1)
+            in_shoreline = ~in_shoreline
+        inside[in_boubox] = in_shoreline
         # d is signed negative if inside the
-        # intersection of two areas and vice versa.
-        dist = (-1) ** (in_boubox) * d
+        # compute nearest distance to multi poly (operate in parallel workers=-1)
+        dist, _ = tree.query(x, k=1, workers=-1)
+        # sign the distance
+        dist = (-1) ** (inside) * dist
         return dist
 
-    return SDFDomain(bbox, func, covering=func_covering)
+    return SDFDomain(bbox, func)

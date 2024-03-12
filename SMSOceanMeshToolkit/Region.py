@@ -1,4 +1,6 @@
 import numpy as np
+import geopandas as gpd
+
 from pyproj import CRS, Transformer
 
 
@@ -66,6 +68,12 @@ class Region:
                 value[:, 1].min(),
                 value[:, 1].max(),
             )
+        elif isinstance(value, str): 
+            # read it in using geopandas 
+            tmp = gpd.read_file(value)
+            # assume it's the first polygon 
+            value = np.asarray(tmp.iloc[0].geometry.exterior.coords)
+            
         self.__bbox = value
 
     def transform_to(self, dst_crs):

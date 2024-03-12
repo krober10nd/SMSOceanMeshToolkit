@@ -12,10 +12,12 @@ from .mesh_sizing_functions import (distance_sizing_from_linestring_function,
                                     enforce_CFL_condition,
                                     enforce_mesh_gradation,
                                     feature_sizing_function,
-                                    wavelength_sizing_function)
+                                    wavelength_sizing_function, 
+                                    combine_sizing_functions)
 from .Region import Region
 from .signed_distance_function import signed_distance_function
 from .edges import get_boundary_edges, get_edges, get_winded_boundary_edges
+from .plotting import simpplot, SimplexCollection
 
 __all__ = [
     "Region",
@@ -45,4 +47,7 @@ __all__ = [
     "get_edges",
     "get_boundary_edges",
     "get_winded_boundary_edges",
+    "combine_sizing_functions",
+    "simpplot", 
+    "SimplexCollection",
 ]

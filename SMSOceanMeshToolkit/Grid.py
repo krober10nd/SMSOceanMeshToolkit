@@ -48,7 +48,7 @@ class Grid(Region):
     """
 
     def __init__(
-        self, region, dx, dy=None, values=np.nan, extrapolate=False, eval=None
+        self, region, dx, dy=None, values=np.nan, extrapolate=True, eval=None
     ):
         super().__init__(region.bbox, region.crs)
         self.dx = (
@@ -175,6 +175,18 @@ class Grid(Region):
             [arr[0, :-1], arr[:-1, -1], arr[-1, ::-1], arr[-2:0:-1, 0]], axis=0
         )
 
+    def fillna(self): 
+        '''Fill NaNs in the grid using linear interpolation.'''
+        # create a copy of the grid object
+        grid = self.copy()
+        # Compute the minimum non-NaN value for each column
+        # set zero to nan 
+        grid.values[grid.values == 0.0] = np.nan
+        # Fill in NaN's...
+        mask  = np.isnan(grid.values)
+        grid.values[mask] = np.interp(np.flatnonzero(mask), np.flatnonzero(~mask), grid.values[~mask])
+        return grid
+    
     def get_centroids(self):
         """
         Get the centroids of the grid cells
@@ -184,7 +196,6 @@ class Grid(Region):
         Yc = (Y[1:, 1:] + Y[:-1, :-1]) / 2
         return Xc, Yc
 
-    # create a copy method
     def copy(self):
         """
         Create a copy of the :obj:`Grid` object
@@ -199,7 +210,8 @@ class Grid(Region):
             A copy of the :obj:`Grid` object
 
         """
-        return Grid(self, self.dx, self.dy, self.values, self.extrapolate, self.eval)
+        region = Region(self.bbox, self.crs)
+        return Grid(region, self.dx, self.dy, self.values, self.extrapolate, self.eval)
 
     def create_vectors(self):
         """

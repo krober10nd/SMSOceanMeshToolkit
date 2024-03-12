@@ -72,4 +72,5 @@ class DEM:
         """
         Plot the DEM
         """
-        return self.da.plot(ax=ax, **kwargs)
+        x = self.da.plot(ax=ax, **kwargs)
+        return x.axes

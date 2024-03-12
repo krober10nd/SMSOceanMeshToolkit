@@ -134,11 +134,18 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
         # if it's empty, create a boubox from the bbox
         boubox = _create_boubox(bbox)
         boubox = np.asarray(boubox)
+        boubox = _densify(boubox, h0 / 2, bbox_enlarged, radius=0.0)
     elif not _is_path_ccw(boubox):
         boubox = np.flipud(boubox)
 
     # Densify boubox to ensure that the minimum spacing along it is <= `h0` / 2
-    boubox = _densify(boubox, h0 / 2, bbox, radius=0.1)
+    # enlarge the bbox 
+    bbox_enlarged = (
+        bbox[0] - h0 / 2,
+        bbox[1] + h0 / 2,
+        bbox[2] - h0 / 2,
+        bbox[3] + h0 / 2,
+    )
 
     # Remove nan's (append again at end)
     isNaN = np.sum(np.isnan(boubox), axis=1) > 0
@@ -155,6 +162,8 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
     boxSGP = shapely.geometry.Polygon(boubox)
 
     inner_polygons = []
+    number_islands = 0
+    number_mainland = 0
     for poly in polyL:
         pSGP = shapely.geometry.Polygon(poly[:-2, :])
         if boxSGP.contains(pSGP):
@@ -163,16 +172,15 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
             if area >= _AREAMIN:
                 inner = np.append(inner, poly, axis=0)
                 inner_polygons.append(pSGP)
+                number_islands += 1
         elif pSGP.overlaps(boxSGP):
             # polygon partially enclosed by the domain so a mainland polygon.
-            # only keep the part hat is inside the domain
-            bSGP = boxSGP.intersection(pSGP)
             # Append polygon segment to mainland
             mainland = np.vstack((mainland, poly))
+            number_mainland += 1
 
-    # if bSGP is empty, then it must be equal to the largest inner polygon by area
-    # check if bSGP exists
-    if "bSGP" not in locals():
+    # if there are no mainalnd polygon then the largest inner polygon becomes the mainland
+    if number_mainland == 0:
         # determine the largest inner polygon by area
         largest_inner_polygon = max(inner_polygons, key=lambda a: a.area)
         # determine the index of the largest inner polygon
@@ -195,89 +203,12 @@ def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
         # append a row of nans
         mainland = np.vstack((mainland, [np.nan, np.nan]))
 
-    out = np.empty(shape=(0, 2))
-
-    if bSGP.geom_type == "Polygon":
-        # Convert to `MultiPolygon`
-        bSGP = shapely.geometry.MultiPolygon([bSGP])
-
-    # MultiPolygon members can be accessed via iterator protocol using `in` loop.
-    for b in bSGP.geoms:
-        xy = np.asarray(b.exterior.coords)
-        xy = np.vstack((xy, xy[0]))
-        out = np.vstack((out, xy, [nan, nan]))
-
-    # densify out
-    out = _densify(out, h0 / 2, bbox, radius=0.0)
+    # combine mainland and region polygon
+    out = np.vstack((mainland, boubox, [nan, nan]))
 
     logger.debug("Exiting:classify_shoreline")
 
     return inner, mainland, out
-
-
-# def _classify_shoreline(bbox, boubox, polys, h0, minimum_area_mult):
-#    """Classify segments in numpy.array `polys` as either `inner` or `mainland`.
-#    (1) The `mainland` category contains segments that are not totally enclosed inside the `bbox`.
-#    (2) The `inner` (i.e., islands) category contains segments totally enclosed inside the `bbox`.
-#        NB: Removes `inner` geometry with area < `minimum_area_mult`*`h0`**2
-#    (3) `boubox` polygon array will be clipped by segments contained by `mainland`.
-#    """
-#    logger.debug("Entering:_classify_shoreline")
-#
-#    _AREAMIN = minimum_area_mult * h0**2
-#
-#    if len(boubox) == 0:
-#        # if it's empty, create a boubox from the bbox
-#        boubox = _create_boubox(bbox)
-#        boubox = np.asarray(boubox)
-#    elif not _is_path_ccw(boubox):
-#        boubox = np.flipud(boubox)
-#
-#    # Densify boubox to ensure that the minimum spacing along it is <= `h0` / 2
-#    boubox = _densify(boubox, h0 / 2, bbox, radius=0.1)
-#
-#    # Remove nan's (append again at end)
-#    isNaN = np.sum(np.isnan(boubox), axis=1) > 0
-#    if any(isNaN):
-#        boubox = np.delete(boubox, isNaN, axis=0)
-#    del isNaN
-#
-#    inner = np.empty(shape=(0, 2))
-#    inner[:] = nan
-#    mainland = np.empty(shape=(0, 2))
-#    mainland[:] = nan
-#
-#    polyL = _convert_to_list(polys)
-#    boxSGP = shapely.geometry.Polygon(boubox)
-#
-#    for poly in polyL:
-#        pSGP = shapely.geometry.Polygon(poly[:-2, :])
-#        if boxSGP.contains(pSGP):
-#            area = pSGP.area
-#            if area >= _AREAMIN:
-#                inner = np.append(inner, poly, axis=0)
-#        elif pSGP.overlaps(boxSGP):
-#            bSGP = boxSGP.intersection(pSGP)
-#            #bSGP = boxSGP.symmetric_difference(pSGP)
-#            # Append polygon segment to mainland
-#            mainland = np.vstack((mainland, poly))
-#            # Clip polygon segment from boubox and regenerate path
-#
-#    out = np.empty(shape=(0, 2))
-#
-#    if bSGP.geom_type == "Polygon":
-#        # Convert to `MultiPolygon`
-#        bSGP = shapely.geometry.MultiPolygon([bSGP])
-#
-#    # MultiPolygon members can be accessed via iterator protocol using `in` loop.
-#    for b in bSGP.geoms:
-#        xy = np.asarray(b.exterior.coords)
-#        xy = np.vstack((xy, xy[0]))
-#        out = np.vstack((out, xy, [nan, nan]))
-#
-#    logger.debug("Exiting:classify_shoreline")
-#
-#    return inner, mainland, out
 
 
 def _chaikins_corner_cutting(coords, refinements=5):
@@ -517,10 +448,17 @@ class CoastalGeometry(Region):
         crs="EPSG:4326",
         smooth_shoreline=True,
         smoothing_approach="chaikin",
-        smoothing_window=0,
+        smoothing_window=5,
         refinements=1,
         minimum_area_mult=4.0,
     ):
+        # check smoothing approach 
+        if smoothing_approach not in ("chaikin", "moving_window"):
+            raise ValueError(
+                f"Unknown smoothing approach {smoothing_approach}. Must be 'chaikin' or 'moving_window'."
+            )
+
+        # check vector data
         if isinstance(vector_data, str):
             vector_data = Path(vector_data)
         if not vector_data.exists():
@@ -528,13 +466,19 @@ class CoastalGeometry(Region):
                 errno.ENOENT, os.strerror(errno.ENOENT), vector_data
             )
 
+    
+        # if region_boundary is a tuple then it's lower left and upper right coordinates
         if isinstance(region_boundary, tuple):
             _region_polygon = np.asarray(_create_boubox(region_boundary))
+        # then it's a numpy array 
         elif isinstance(region_boundary, np.ndarray):
             _region_polygon = region_boundary
-        elif isinstance(region_boundary, str):  # then assume shapefile
+        # then it's a file path
+        elif isinstance(region_boundary, str): 
             try:
                 _region_polygon = gpd.read_file(region_boundary)
+                # make sure it's a polygon 
+                assert len(_region_polygon) == 1, "Region must be a single polygon"
                 _region_polygon = _region_polygon.iloc[0].geometry
                 if _region_polygon.geom_type != "Polygon":
                     raise ValueError(
@@ -547,24 +491,35 @@ class CoastalGeometry(Region):
                 )
         else:
             raise ValueError(
-                f"region_boundary must be a tuple, numpy array, or shapefile. Got {type(region_boundary)} instead."
+                f"region_boundary argument must be a tuple, numpy array, or shapefile. Got {type(region_boundary)} instead."
             )
-
+        # ensure the polygon is in the right order
         if not _is_path_ccw(_region_polygon):
             _region_polygon = np.flipud(_region_polygon)
-
+        
+        # form the region bounding box
         region_bbox = (
             np.nanmin(_region_polygon[:, 0]),
             np.nanmax(_region_polygon[:, 0]),
             np.nanmin(_region_polygon[:, 1]),
             np.nanmax(_region_polygon[:, 1]),
         )
+        # Enlarge the bounding box 
+        enlarged_bbox = (
+            region_bbox[0] - minimum_mesh_size / 2,
+            region_bbox[1] + minimum_mesh_size / 2,
+            region_bbox[2] - minimum_mesh_size / 2,
+            region_bbox[3] + minimum_mesh_size / 2,
+        )
+        # make sure it's densified 
+        _region_polygon = _densify(_region_polygon, minimum_mesh_size / 2.0, enlarged_bbox)
 
+        # Form Region parent class 
         super().__init__(region_bbox, crs)
 
         self.vector_data = vector_data
+        self.boubox  = _region_polygon
         self.minimum_mesh_size = minimum_mesh_size
-        self.region_polygon = _region_polygon
         self.smoothing_approach = smoothing_approach
         self.smoothing_window = smoothing_window
         self.refinements = refinements
@@ -572,27 +527,26 @@ class CoastalGeometry(Region):
 
         # Initialize empty lists to store the processed vector data
         self.inner = []
-        self.region_polygon = []
         self.mainland = []
+        self.region_polygon = []
 
+        # Read in all the polygons from the vector data file
         polys = self._read()
-
+    
         polys = _densify(polys, self.minimum_mesh_size, region_bbox)
 
         if smooth_shoreline and smoothing_approach == "chaikin":
             polys = _smooth_vector_data(polys, self.refinements)
         elif smooth_shoreline and smoothing_approach == "moving_window":
             polys = _smooth_vector_data_moving_avg(polys, self.smoothing_window)
-        elif smooth_shoreline and smoothing_approach not in (
-            "chaikin",
-            "moving_window",
-        ):
-            raise ValueError(
-                f"Unknown smoothing approach {self.smoothing_approach}. Must be 'chaikin' or 'moving_window'."
-            )
+        else: 
+            pass 
 
-        polys = _clip_polys(polys, region_bbox)
+        #polys = _clip_polys(polys, region_bbox)
 
+        # densify the bounding box 
+        self.boubox = _densify(self.boubox, self.minimum_mesh_size / 2.0, enlarged_bbox)
+        
         self.inner, self.mainland, self.region_polygon = _classify_shoreline(
             region_bbox,
             _region_polygon,
@@ -698,6 +652,7 @@ class CoastalGeometry(Region):
         mainland = convert_to_list_of_lists(self.mainland)
         inner = convert_to_list_of_lists(self.inner)
         outer = convert_to_list_of_lists(self.region_polygon)
+        boubox = self.boubox
 
         _tmp = []
         labels = []
@@ -710,6 +665,8 @@ class CoastalGeometry(Region):
         for _outer in outer:
             _tmp.append(shapely.geometry.Polygon(_outer))
             labels.append("outer")
+        _tmp.append(shapely.geometry.Polygon(boubox))
+        labels.append("boubox")
         # Create a geodataframe
         gdf = gpd.GeoDataFrame(geometry=_tmp, crs=self.crs)
         gdf["labels"] = labels
@@ -763,7 +720,7 @@ class CoastalGeometry(Region):
         return _convert_to_array(polys)
 
     def plot(
-        self, ax=None, xlabel=None, ylabel=None, title=None, filename=None, show=True
+        self, ax=None, xlabel=None, ylabel=None, title=None, filename=None, show=True, markers=False
     ):
         """
         Visualize the content in the classified vector fields of
@@ -782,7 +739,9 @@ class CoastalGeometry(Region):
         filename : str, optional
             Path to save the figure.
         show : bool, optional
-
+            If True, display the plot. Default is True.
+        markers : bool, optional
+            If True, plot the markers. Default is False.
         """
         if ax is None:
             fig, ax = plt.subplots()
@@ -791,52 +750,17 @@ class CoastalGeometry(Region):
         # Plotting mainland, inner, and region_polygon
         if len(self.mainland) != 0:
             ax.plot(self.mainland[:, 0], self.mainland[:, 1], "k-", label="Mainland")
+            if markers:
+                ax.plot(self.mainland[:, 0], self.mainland[:, 1], "ko", label="Mainland")
 
         if len(self.inner) != 0:
             ax.plot(self.inner[:, 0], self.inner[:, 1], "r-", label="Inner")
+            if markers:
+                ax.plot(self.inner[:, 0], self.inner[:, 1], "ro", label="Inner")
 
-        # TODO: this will be hatched by evalulating the signed distance function
-        # ax.plot(self.region_polygon[:, 0], self.region_polygon[:, 1], "g--", label='Meshing Domain')
-
-        # Creating a polygon from region_polygon
-        region_poly = shapely.geometry.Polygon(self.region_polygon[:-1])
-
-        # combine mainland & any inner polygons into one multipolygon
-        if len(self.mainland) != 0:
-            _mainland = convert_to_list_of_lists(self.mainland)
-
-        if len(self.inner) != 0:
-            _inner = convert_to_list_of_lists(self.inner)
-
-        # TODO:  use a signed distance funciton
-        # outer_poly = []
-        # if len(self.mainland) != 0:
-        #    for _main in _mainland:
-        #        outer_poly.append(shapely.geometry.Polygon(_main[:-1]))
-        #
-        # inner_poly = []
-        # if len(self.inner) != 0:
-        #    for _inn in _inner:
-        #        inner_poly.append(shapely.geometry.Polygon(_inn[:-1]))
-        #
-        ## Creating a polygon from outer_poly
-        # outer_poly = shapely.geometry.MultiPolygon(outer_poly)
-
-        # inner_poly = shapely.geometry.MultiPolygon(inner_poly)
-
-        # intersection_poly = region_poly.intersection(outer_poly)
-
-        ## Plotting the intersection area with hatching
-        # if not intersection_poly.is_empty:
-        #    if intersection_poly.geom_type == "Polygon":
-        #        x, y = intersection_poly.exterior.xy
-        #        ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
-        #    elif intersection_poly.geom_type == "MultiPolygon":
-        #        print("MultiPolygon")
-        #        for p in intersection_poly.geoms:
-        #            x, y = p.exterior.xy
-        #            ax.fill(x, y, alpha=0.2, hatch='////', label="Meshing Domain")
-
+        ax.plot(*self.boubox.T, "b-", label="Bounding region")
+        if markers:
+            ax.plot(*self.boubox.T, "bo", label="Bounding region")
         # Setting plot boundaries
         xmin, xmax, ymin, ymax = self.bbox
         border = 0.10 * (xmax - xmin)

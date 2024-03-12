@@ -52,35 +52,31 @@ def simp_vol(p, t):
     else:
         raise NotImplementedError
 
-
 def simp_qual(p, t):
-    """
-    Simplex quality radius-to-edge ratio
+    """Simplex quality radius-to-edge ratio
 
     :param p: vertex coordinates of mesh
     :type p: numpy.ndarray[`float` x dim]
     :param t: mesh connectivity
     :type t: numpy.ndarray[`int` x (dim + 1)]
+
     :return: signed mesh quality: signed mesh quality (1.0 is perfect)
     :rtype: numpy.ndarray[`float` x 1]
+
     """
     assert p.ndim == 2 and t.ndim == 2 and p.shape[1] + 1 == t.shape[1]
 
     def length(p1):
-        return np.sqrt((p1**2).sum(1))
+        return np.sqrt((p1 ** 2).sum(1))
 
     a = length(p[t[:, 1]] - p[t[:, 0]])
     b = length(p[t[:, 2]] - p[t[:, 0]])
     c = length(p[t[:, 2]] - p[t[:, 1]])
-    # Suppress Runtime warnings here because we know that mult1/denom1 can be negative
-    # as the mesh is being cleaned
-    with warnings.catch_warnings():
-        warnings.simplefilter("ignore")
-        mult1 = (b + c - a) * (c + a - b) * (a + b - c) / (a + b + c)
-        denom1 = np.sqrt((a + b + c) * (b + c - a) * (c + a - b) * (a + b - c))
-        r = 0.5 * mult1
-        R = a * b * c / denom1
-        return 2 * r / R
+    r = 0.5 * np.sqrt((b + c - a) * (c + a - b) * (a + b - c) / (a + b + c))
+    R = a * b * c / np.sqrt((a + b + c) * (b + c - a) * (c + a - b) * (a + b - c))
+    return 2 * r / R
+
+
 
 
 def unique_rows(A, return_index=False, return_inverse=False):

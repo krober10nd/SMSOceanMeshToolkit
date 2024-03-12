@@ -5,18 +5,21 @@ import time
 # tpl
 import numpy as np
 import scipy.sparse as spsparse
+import matplotlib.pyplot as plt
 
-from .clean import fix_mesh
+from .clean import fix_mesh, simp_qual
 from .Grid import Grid
 from .libs._delaunay_class import DelaunayTriangulation as DT
 from .libs._fast_geometry import unique_edges
 # local
 from .signed_distance_function import SDFDomain as Domain
+from .plotting import SimplexCollection
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["generate_mesh"]
 
+DENSITY_CONTROL_FREQUENCY = 30
 
 def _parse_kwargs(kwargs):
     for key in kwargs:
@@ -43,6 +46,30 @@ def _parse_kwargs(kwargs):
 def _check_bbox(bbox):
     assert isinstance(bbox, tuple), "`bbox` must be a tuple"
     assert int(len(bbox) / 2), "`dim` must be 2"
+
+def _plot_mesh(fig, c, bbox, p, t, count): 
+    xmin, xmax = bbox[0]
+    ymin, ymax = bbox[1]
+    # red to green colormap spanning 11 colors 
+    if count==0:
+        fig.clf()
+        ax = fig.gca()
+        c = SimplexCollection()
+        ax.add_collection(c)
+        ax.set_xlim(xmin, xmax)
+        ax.set_ylim(ymin, ymax)
+        ax.set_aspect('equal')
+        ax.set_axis_off()
+        c.set_simplices((p, t), color_by_quality=True)
+        fig.canvas.draw()    
+    else:   
+        c.set_simplices((p, t), color_by_quality=True)
+        fig.canvas.draw()
+    # set the title to the count 
+    fig.suptitle(f"Iteration {count}")
+    return fig, c 
+
+        
 
 
 def generate_mesh(domain, edge_length, **kwargs):
@@ -106,17 +133,21 @@ def generate_mesh(domain, edge_length, **kwargs):
 
     assert opts["max_iter"] > 0, "`max_iter` must be > 0"
     max_iter = opts["max_iter"]
-
+    # log the seed used 
+    logger.info(f"Using seed {opts['seed']}")
     np.random.seed(opts["seed"])
 
     L0mult = 1 + 0.4 / 2 ** (_DIM - 1)
     delta_t = opts["pseudo_dt"]
-    geps = 1e-3 * np.amin(min_edge_length)
-    deps = np.sqrt(np.finfo(np.double).eps)  # * np.amin(min_edge_length)
+    #geps = 1e-3 * np.amin(min_edge_length)
+    Re = 6378.137e3
+    geps = 1e-12*min_edge_length/Re;
+    deps = np.sqrt(np.finfo(np.double).eps) * np.amin(min_edge_length)
 
     pfix, nfix = _unpack_pfix(_DIM, opts)
 
     if opts["points"] is None:
+        logging.info("Generating initial points")
         p = _generate_initial_points(
             min_edge_length,
             geps,
@@ -126,7 +157,10 @@ def generate_mesh(domain, edge_length, **kwargs):
             pfix,
         )
     else:
+        logging.info("Using user-provided points")
         p = opts["points"]
+        # assert that it's 2d 
+        assert p.shape[1] == 2, "Points must be 2D"
 
     N = p.shape[0]
 
@@ -135,6 +169,9 @@ def generate_mesh(domain, edge_length, **kwargs):
     logger.info(
         f"Commencing mesh generation with {N} vertices will perform {max_iter} iterations."
     )
+    if opts["plot"] > 0:
+        fig = plt.figure()
+        
     for count in range(max_iter):
         start = time.time()
 
@@ -156,15 +193,26 @@ def generate_mesh(domain, edge_length, **kwargs):
         # Remove points outside the domain
         t = _remove_triangles_outside(p, t, fd, geps)
 
+        if count % opts["plot"] == 0:
+            if count == 0:
+                c = None
+            fig, c = _plot_mesh(fig, c, bbox, p, t, count)
+            # For visualizing the mesh
+            plt.pause(0.2)
+
         # Number of iterations reached, stop.
         if count == (max_iter - 1):
             p, t, _ = fix_mesh(p, t, dim=_DIM, delete_unused=True)
             logger.info("Termination reached...maximum number of iterations.")
+            plt.close() # close any plots
             return p, t
 
         # Compute the forces on the bars
-        Ftot = _compute_forces(p, t, fh, min_edge_length, L0mult, opts)
-
+        Ftot, p, N, pold = _compute_forces(p, t, fh, L0mult, nfix, count)
+        if np.all(Ftot == 0):
+            continue
+        #Ftot = _compute_forces(p, t, fh, min_edge_length, L0mult)
+        
         # Force = 0 at fixed points
         Ftot[:nfix] = 0
 
@@ -220,7 +268,7 @@ def _get_bars(t):
 
 
 # Persson-Strang
-def _compute_forces(p, t, fh, min_edge_length, L0mult, opts):
+def _compute_forces(p, t, fh, L0mult, nfix, count):
     """Compute the forces on each edge based on the sizing function"""
     N = p.shape[0]
     bars = _get_bars(t)
@@ -228,7 +276,10 @@ def _compute_forces(p, t, fh, min_edge_length, L0mult, opts):
     L = np.sqrt((barvec**2).sum(1))  # L = Bar lengths
     L[L == 0] = np.finfo(float).eps
     hbars = fh(p[bars].sum(1) / 2)
-    L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars))
+    # if hbars is excessively large then abort 
+    if np.any(hbars > 1e4):
+        raise ValueError("Problem detected in fh...is extrapolation enabled?")
+    L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars)) 
     F = L0 - L
     F[F < 0] = 0  # Bar forces (scalars)
     Fvec = (
@@ -240,31 +291,40 @@ def _compute_forces(p, t, fh, min_edge_length, L0mult, opts):
         np.hstack((Fvec, -Fvec)),
         shape=(N, 2),
     )
-    return Ftot
+    pold = p 
+    # Density control - remove points that are too close
+    if (count % DENSITY_CONTROL_FREQUENCY) == 0 and (L0 > 2*L).any():
+        ixdel = np.setdiff1d(bars[L0 > 2*L].reshape(-1), np.arange(nfix))
+        p = p[np.setdiff1d(np.arange(N), ixdel)]
+        N = p.shape[0]; pold = float('inf')
+        logger.info(f"Removed {len(ixdel)} points due to excessive density")
+        Ftot *= 0.0 # reset the forces
+        
+    return Ftot, p, N, pold
 
 
 # Bossen-Heckbert
-# def _compute_forces(p, t, fh, min_edge_length, L0mult):
-#    """Compute the forces on each edge based on the sizing function"""
-#    N = p.shape[0]
-#    bars = _get_bars(t)
-#    barvec = p[bars[:, 0]] - p[bars[:, 1]]  # List of bar vectors
-#    L = np.sqrt((barvec ** 2).sum(1))  # L = Bar lengths
-#    L[L == 0] = np.finfo(float).eps
-#    hbars = fh(p[bars].sum(1) / 2)
-#    L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars))
-#    LN = L / L0
-#    F = (1 - LN ** 4) * np.exp(-(LN ** 4)) / LN
-#    Fvec = (
-#        F[:, None] / LN[:, None].dot(np.ones((1, 2))) * barvec
-#    )  # Bar forces (x,y components)
-#    Ftot = _dense(
-#        bars[:, [0] * 2 + [1] * 2],
-#        np.repeat([list(range(2)) * 2], len(F), axis=0),
-#        np.hstack((Fvec, -Fvec)),
-#        shape=(N, 2),
-#    )
-#    return Ftot
+#def _compute_forces(p, t, fh, min_edge_length, L0mult):
+#   """Compute the forces on each edge based on the sizing function"""
+#   N = p.shape[0]
+#   bars = _get_bars(t)
+#   barvec = p[bars[:, 0]] - p[bars[:, 1]]  # List of bar vectors
+#   L = np.sqrt((barvec ** 2).sum(1))  # L = Bar lengths
+#   L[L == 0] = np.finfo(float).eps
+#   hbars = fh(p[bars].sum(1) / 2)
+#   L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars))
+#   LN = L / L0
+#   F = (1 - LN ** 4) * np.exp(-(LN ** 4)) / LN
+#   Fvec = (
+#       F[:, None] / LN[:, None].dot(np.ones((1, 2))) * barvec
+#   )  # Bar forces (x,y components)
+#   Ftot = _dense(
+#       bars[:, [0] * 2 + [1] * 2],
+#       np.repeat([list(range(2)) * 2], len(F), axis=0),
+#       np.hstack((Fvec, -Fvec)),
+#       shape=(N, 2),
+#   )
+#   return Ftot
 
 
 def _dense(Ix, J, S, shape=None, dtype=None):
@@ -321,29 +381,44 @@ def _project_points_back(p, fd, deps):
         p[ix] -= (d[ix] * np.vstack(dgrads) / dgrad2).T  # Project
     return p
 
+def _generate_initial_points(min_edge_length, geps, bbox, fh, fd, pfix):
+    """
+    Generate an initial distribution of points within a bounding box based on equilateral triangles.
 
-def _generate_initial_points(min_edge_length, geps, bbox, fh, fd, pfix, stereo=False):
-    """Create initial distribution in bounding box (equilateral triangles)"""
-    p = np.mgrid[
-        tuple(slice(min, max + min_edge_length, min_edge_length) for min, max in bbox)
-    ].astype(float)
-    p = p.reshape(2, -1).T
-    r0 = fh(p)
-    r0m = np.min(r0[r0 >= min_edge_length])
-    p = p[np.random.rand(p.shape[0]) < r0m**2 / r0**2]
-    p = p[fd(p) < geps]  # Keep only d<0 points
-    return np.vstack(
-        (
-            pfix,
-            p,
-        )
-    )
+    Parameters:
+    - bbox: Bounding box as a list of tuples [(min_x, max_x), (min_y, max_y)].
+    - fh: Function handler to adjust point density.
+    - fd: Function handler to define the domain, points where fd < 0 will be kept.
+    - min_edge_length: Minimum edge length for equilateral triangles.
+    - geps: Geometry epsilon, tolerance for defining inside/outside of the domain.
+    - pfix: Array of fixed points that must be included in the output.
 
+    Returns:
+    - A numpy array of points within the domain defined by fd, adjusted by fh, including pfix.
+    """
+    xmin, xmax, ymin, ymax = bbox.flatten()
+    # create a polygon from the bbox 
+    from shapely.geometry import Polygon
+    bbox_tmp = Polygon([(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)])
+    
+    h0 = min_edge_length
+    # Create initial distribution in bounding box (equilateral triangles)
+    x, y = np.mgrid[xmin:(xmax+h0):h0,
+                    ymin:(ymax+h0*np.sqrt(3)/2):h0*np.sqrt(3)/2]
+    #x[:, 1::2] += h0/2                               # Shift even rows
+    y[:, 1::2] += h0*np.sqrt(3)/4                     # Shift even rows
+    p = np.vstack((x.flat, y.flat)).T                # List of node coordin
+    
+    # Filter points using fh and fd
+    p = p[fd(p) < geps]
+    r0 = 1/fh(p)**2                                  # Probability to keep point
+    p = p[np.random.random(p.shape[0])<r0/r0.max()]  # Rejection method
 
-def _dist(p1, p2):
-    """Euclidean distance between two sets of points"""
-    return np.sqrt(((p1 - p2) ** 2).sum(1))
+    # Concatenate fixed points
+    if pfix is not None and len(pfix) > 0:
+        p = np.vstack([pfix, p])
 
+    return p
 
 def _unpack_pfix(dim, opts):
     """Unpack fixed points"""
