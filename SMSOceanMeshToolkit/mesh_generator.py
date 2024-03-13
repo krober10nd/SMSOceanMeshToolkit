@@ -193,7 +193,7 @@ def generate_mesh(domain, edge_length, **kwargs):
         # Remove points outside the domain
         t = _remove_triangles_outside(p, t, fd, geps)
 
-        if count % opts["plot"] == 0:
+        if count % opts["plot"] == 0 and count > 0:
             if count == 0:
                 c = None
             fig, c = _plot_mesh(fig, c, bbox, p, t, count)
@@ -204,7 +204,8 @@ def generate_mesh(domain, edge_length, **kwargs):
         if count == (max_iter - 1):
             p, t, _ = fix_mesh(p, t, dim=_DIM, delete_unused=True)
             logger.info("Termination reached...maximum number of iterations.")
-            plt.close() # close any plots
+            if opts["plot"] > 0:
+                plt.close() # close any plots
             return p, t
 
         # Compute the forces on the bars

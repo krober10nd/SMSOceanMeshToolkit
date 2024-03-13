@@ -73,6 +73,8 @@ def simp_qual(p, t):
     b = length(p[t[:, 2]] - p[t[:, 0]])
     c = length(p[t[:, 2]] - p[t[:, 1]])
     r = 0.5 * np.sqrt((b + c - a) * (c + a - b) * (a + b - c) / (a + b + c))
+    # suppress any divide by 0 warnings 
+    warnings.filterwarnings("ignore")
     R = a * b * c / np.sqrt((a + b + c) * (b + c - a) * (c + a - b) * (a + b - c))
     return 2 * r / R
 
@@ -207,9 +209,12 @@ def mesh_clean(
     points, cells = make_mesh_boundaries_traversable(
         points, cells, min_disconnected_area=min_percent_disconnected_area
     )
-    points, cells = delete_boundary_faces(points, cells, min_qual=min_element_qual)
+    if min_element_qual > 0:
+        points, cells = delete_boundary_faces(points, cells, min_qual=min_element_qual)
     points, cells = delete_faces_connected_to_one_face(points, cells)
-    points, cells = laplacian2(points, cells, max_iter=max_iter, tol=tol, pfix=pfix)
+    if max_iter > 0:
+        points, cells = laplacian2(points, cells, max_iter=max_iter, tol=tol, pfix=pfix)
+
     points, cells = make_mesh_boundaries_traversable(
         points, cells, min_disconnected_area=min_percent_disconnected_area
     )
