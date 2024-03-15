@@ -18,8 +18,12 @@ from .Region import Region
 from .signed_distance_function import signed_distance_function
 from .edges import get_boundary_edges, get_edges, get_winded_boundary_edges
 from .plotting import simpplot, SimplexCollection
+from .custom_logging import ColorCodes, ColorFormatter, MeshQualityFormatter
 
 __all__ = [
+    "ColorCodes",
+    "ColorFormatter",
+    "MeshQualityFormatter",
     "Region",
     "CoastalGeometry",
     "signed_distance_function",

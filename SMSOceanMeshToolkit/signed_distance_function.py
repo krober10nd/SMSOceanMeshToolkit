@@ -11,6 +11,7 @@ from inpoly import inpoly2
 from matplotlib.collections import PatchCollection
 from matplotlib.patches import Rectangle
 
+from .edges import get_poly_edges
 from .geospatial_data import CoastalGeometry
 
 logger = logging.getLogger(__name__)
@@ -23,37 +24,37 @@ __all__ = [
 nan = np.nan
 
 
-def get_poly_edges(poly):
-    """
-    Given a winded polygon represented as a set of line segments
-    with separated polygons indicated by a row of nans, this function returns
-    the edges of the polygon such that each edge contains an index to the start and end
-    coordinates.
+# def get_poly_edges(poly):
+#     """
+#     Given a winded polygon represented as a set of line segments
+#     with separated polygons indicated by a row of nans, this function returns
+#     the edges of the polygon such that each edge contains an index to the start and end
+#     coordinates.
 
-    Parameters
-    ----------
-    poly: array-like, float
-        A 2D array of point coordinates with features sepearated by NaNs
+#     Parameters
+#     ----------
+#     poly: array-like, float
+#         A 2D array of point coordinates with features sepearated by NaNs
 
-    Returns
-    -------
-    edges: array-like, int
-        A 2D array of integers containing indexes into the `poly` array.
+#     Returns
+#     -------
+#     edges: array-like, int
+#         A 2D array of integers containing indexes into the `poly` array.
 
-    """
-    ix = np.argwhere(np.isnan(poly[:, 0])).ravel()
-    ix = np.insert(ix, 0, -1)
+#     """
+#     ix = np.argwhere(np.isnan(poly[:, 0])).ravel()
+#     ix = np.insert(ix, 0, -1)
 
-    edges = []
-    for s in range(len(ix) - 1):
-        ix_start = ix[s] + 1
-        ix_end = ix[s + 1] - 1
-        col1 = np.arange(ix_start, ix_end - 1)
-        col2 = np.arange(ix_start + 1, ix_end)
-        tmp = np.vstack((col1, col2)).T
-        tmp = np.append(tmp, [[ix_end, ix_start]], axis=0)
-        edges.append(tmp)
-    return np.concatenate(edges, axis=0)
+#     edges = []
+#     for s in range(len(ix) - 1):
+#         ix_start = ix[s] + 1
+#         ix_end = ix[s + 1] - 1
+#         col1 = np.arange(ix_start, ix_end - 1)
+#         col2 = np.arange(ix_start + 1, ix_end)
+#         tmp = np.vstack((col1, col2)).T
+#         tmp = np.append(tmp, [[ix_end, ix_start]], axis=0)
+#         edges.append(tmp)
+#     return np.concatenate(edges, axis=0)
 
 
 def _plot(geo, grid_size=100):
@@ -221,10 +222,10 @@ def signed_distance_function(coastal_geometry, invert=False):
         inner = coastal_geometry.inner
         region_polygon = coastal_geometry.region_polygon
 
-    # add a row of nans to separate the polygons
-    boubox = np.vstack((boubox, np.array([nan, nan])))
+    # make sure the first row and the last row are the same 
+    if not np.all(boubox[0, :] == boubox[-1, :]):
+        boubox = np.vstack((boubox, boubox[0, :]))
     boubox = np.asarray(boubox)
-    e_box = get_poly_edges(boubox)
 
     # combine the inner and region polygons (if they exist)
     if inner is None:
@@ -239,6 +240,9 @@ def signed_distance_function(coastal_geometry, invert=False):
     )
     # edges of the polygon
     e = get_poly_edges(poly)
+    #vend = e[-1:, 1]
+    # append a row to e 
+    #e = np.vstack((e, [vend[0], e[0, 0]]))
 
     def func(x):
         # Initialize d with some positive number larger than geps
@@ -246,7 +250,7 @@ def signed_distance_function(coastal_geometry, invert=False):
         # all points are assumed to be outside the domain
         inside = np.zeros(len(x), dtype=bool)
         # are points inside the polygon (boubox) indicating the domain?
-        in_boubox, _ = inpoly2(x, boubox, e_box)
+        in_boubox, _ = inpoly2(x, boubox[:-1])
         # points outside the boubox are not inside the domain
         inside[in_boubox] = True
         # Of the points that are inside the boubox, determine which are also 

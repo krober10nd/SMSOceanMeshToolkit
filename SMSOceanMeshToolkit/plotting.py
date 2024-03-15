@@ -156,4 +156,4 @@ def simpplot(p, t, *args, **kwargs):
     else:
         raise NotImplementedError("Unknown dimension.")
     #plt.draw_if_interactive()
-    plt.show()
+    return ax 

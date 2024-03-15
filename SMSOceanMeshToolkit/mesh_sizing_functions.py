@@ -167,7 +167,7 @@ def enforce_CFL_condition(
 def wavelength_sizing_function(
     grid,
     dem,
-    wl=10,
+    wl=100,
     max_edge_length=np.inf,
     period=12.42 * 3600,  # M2 period in seconds
     gravity=9.81,  # m/s^2
@@ -228,7 +228,10 @@ def wavelength_sizing_function(
 
     if max_edge_length is not None:
         grid.values[grid.values > max_edge_length] = max_edge_length
-
+    
+    # enforce the minimum 
+    grid.values[grid.values < grid.minimum_spacing] = grid.minimum_spacing
+    grid = grid.fillna()
     grid.build_interpolant()
     return grid
 

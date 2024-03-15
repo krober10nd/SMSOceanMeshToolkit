@@ -6,16 +6,27 @@ import time
 import numpy as np
 import scipy.sparse as spsparse
 import matplotlib.pyplot as plt
+import pandas as pd
 
+# local
 from .clean import fix_mesh, simp_qual
 from .Grid import Grid
 from .libs._delaunay_class import DelaunayTriangulation as DT
 from .libs._fast_geometry import unique_edges
-# local
 from .signed_distance_function import SDFDomain as Domain
 from .plotting import SimplexCollection
+# from .custom_logging import MeshQualityFormatter
 
 logger = logging.getLogger(__name__)
+# # Create and apply the custom formatter
+# ch = logging.StreamHandler()
+# formatter = MeshQualityFormatter()
+# ch.setFormatter(formatter)
+# # Check if the logger already has handlers and remove them to prevent duplicate logs
+# if logger.hasHandlers():
+#     logger.handlers.clear()
+# logger.addHandler(ch)
+
 
 __all__ = ["generate_mesh"]
 
@@ -35,6 +46,7 @@ def _parse_kwargs(kwargs):
             "min_edge_length",
             "plot",
             "pseudo_dt",
+            "force_function",
         }:
             pass
         else:
@@ -42,6 +54,26 @@ def _parse_kwargs(kwargs):
                 "Option %s with parameter %s not recognized " % (key, kwargs[key])
             )
 
+def _plot_quality_evolution(qual_history):
+    fig, ax = plt.subplots()
+    ax.plot(qual_history.index, qual_history['min_quality'], label='Minimum quality')
+    ax.plot(qual_history.index, qual_history['mean_quality'], label='Mean quality')
+    ax.plot(qual_history.index, qual_history['lower_sigma'], label='3rd lower sigma')
+    # only show integer ticks
+    ax.xaxis.set_major_locator(plt.MaxNLocator(integer=True))
+    # show a grid 
+    ax.grid(True)
+    ax.set_xlabel('Iteration')
+    ax.set_ylabel('Mesh quality')
+    ax.set_title('Mesh quality evolution')
+    # annotate the peak mean 
+    ax.annotate(f"Peak mean: {qual_history['mean_quality'].max():.3f}", 
+                xy=(qual_history['mean_quality'].idxmax(), qual_history['mean_quality'].max()),
+                xytext=(qual_history['mean_quality'].idxmax()+5, qual_history['mean_quality'].max()+0.05),
+                arrowprops=dict(facecolor='black', shrink=0.05))
+    ax.legend()
+    # add datetime to file name
+    plt.savefig(f"mesh_quality_evolution_{time.strftime('%Y%m%d-%H%M%S')}.png", dpi=300, bbox_inches='tight')
 
 def _check_bbox(bbox):
     assert isinstance(bbox, tuple), "`bbox` must be a tuple"
@@ -70,8 +102,6 @@ def _plot_mesh(fig, c, bbox, p, t, count):
     return fig, c 
 
         
-
-
 def generate_mesh(domain, edge_length, **kwargs):
     """
     Generate a 2D triangular mesh using callbacks to a
@@ -101,6 +131,10 @@ def generate_mesh(domain, edge_length, **kwargs):
             The mesh is visualized every `plot` meshing iterations.
         * *pseudo_dt* (``float``) --
             The pseudo time step for the meshing algorithm. (default==0.2)
+        * *force_function* (``str``) --
+            The force function to use. (default==`persson_strang`)
+            Options: `persson_strang`, `bossen_heckbert`
+        
 
     Returns
     -------
@@ -119,9 +153,16 @@ def generate_mesh(domain, edge_length, **kwargs):
         "min_edge_length": None,
         "plot": 999999,
         "pseudo_dt": 0.2,
+        "force_function": "persson_strang", # or "bossen_heckbert"
+        "nscreen": 1,
     }
     opts.update(kwargs)
     _parse_kwargs(kwargs)
+
+    # if psuedo_dt was not specified and using bossen_heckbert, set it to 0.10 
+    if opts["force_function"] == "bossen_heckbert" and "pseudo_dt" not in kwargs:
+        logger.info("Using bossen_heckbert force function, setting pseudo_dt to 0.10")
+        opts["pseudo_dt"] = 0.10
 
     fd, bbox = _unpack_domain(domain, opts)
     fh, min_edge_length = _unpack_sizing(edge_length, opts)
@@ -139,7 +180,6 @@ def generate_mesh(domain, edge_length, **kwargs):
 
     L0mult = 1 + 0.4 / 2 ** (_DIM - 1)
     delta_t = opts["pseudo_dt"]
-    #geps = 1e-3 * np.amin(min_edge_length)
     Re = 6378.137e3
     geps = 1e-12*min_edge_length/Re;
     deps = np.sqrt(np.finfo(np.double).eps) * np.amin(min_edge_length)
@@ -147,7 +187,7 @@ def generate_mesh(domain, edge_length, **kwargs):
     pfix, nfix = _unpack_pfix(_DIM, opts)
 
     if opts["points"] is None:
-        logging.info("Generating initial points")
+        logger.info("Generating initial points")
         p = _generate_initial_points(
             min_edge_length,
             geps,
@@ -157,21 +197,29 @@ def generate_mesh(domain, edge_length, **kwargs):
             pfix,
         )
     else:
-        logging.info("Using user-provided points")
+        logger.info("Using user-provided points")
         p = opts["points"]
-        # assert that it's 2d 
-        assert p.shape[1] == 2, "Points must be 2D"
+        assert p.shape[1] == 2, "User-supplied points must be 2D"
 
     N = p.shape[0]
+
+    # To convert to a pandas dataframe to plot at the end 
+    qual_history = {}
+    min_qual_history = []
+    mean_qual_history = []
+    lower_sigma_history = []
 
     assert N > 0, "No vertices to mesh with!"
 
     logger.info(
-        f"Commencing mesh generation with {N} vertices will perform {max_iter} iterations."
+        f"Commencing mesh generation with {N:,} vertices will perform {max_iter} iterations."
     )
+    # log the force function 
+    logger.info(f"Using force function {opts['force_function']}")
+    
     if opts["plot"] > 0:
         fig = plt.figure()
-        
+     
     for count in range(max_iter):
         start = time.time()
 
@@ -186,6 +234,7 @@ def generate_mesh(domain, edge_length, **kwargs):
         # Find where pfix went
         if nfix > 0:
             for fix in pfix:
+                # adjust the fixed points back to their locations
                 ind = _closest_node(fix, p)
                 ifix.append(ind)
                 p[ind] = fix
@@ -193,26 +242,68 @@ def generate_mesh(domain, edge_length, **kwargs):
         # Remove points outside the domain
         t = _remove_triangles_outside(p, t, fd, geps)
 
-        if count % opts["plot"] == 0 and count > 0:
-            if count == 0:
-                c = None
-            fig, c = _plot_mesh(fig, c, bbox, p, t, count)
-            # For visualizing the mesh
-            plt.pause(0.2)
+        # compute mesh quality 
+        if opts["nscreen"] > 0:
+            if count % opts["nscreen"] == 0:
+                qual = simp_qual(p, t)
+
+                min_qual = np.min(qual) 
+                mean_qual = np.nanmean(qual)
+                lower_sigma = mean_qual - 3*np.nanstd(qual)
+
+                min_qual_history.append(min_qual)
+                mean_qual_history.append(mean_qual)
+                lower_sigma_history.append(lower_sigma)
+                
+                logger.info(f"Minimum mesh quality: {min_qual:.3f}")
+                logger.info(f"Mean mesh quality: {mean_qual:.3f}")
+                logger.info(f"3rd lower sigma mesh quality: {lower_sigma:.3f}")
+                logger.info("*"*50)
+        
+        if opts["plot"] > 0: 
+            if count % opts["plot"] == 0:
+                if count == 0: 
+                    c=None
+                fig, c = _plot_mesh(fig, c, bbox, p, t, count)
+                # For visualizing the mesh
+                plt.pause(0.2)
 
         # Number of iterations reached, stop.
         if count == (max_iter - 1):
             p, t, _ = fix_mesh(p, t, dim=_DIM, delete_unused=True)
             logger.info("Termination reached...maximum number of iterations.")
+
+            qual_history['min_quality'] = min_qual_history
+            qual_history['mean_quality'] = mean_qual_history
+            qual_history['lower_sigma'] = lower_sigma_history
+            # convert the qual_history to a dataframe 
+            qual_history = pd.DataFrame(qual_history)
+            # write out 
+            qual_history.to_csv('mesh_quality.csv')
+            # make a plot 
+            _plot_quality_evolution(qual_history)
             if opts["plot"] > 0:
                 plt.close() # close any plots
             return p, t
 
+        # Compute edge lengths used in force/spring computation
+        bars, barvec, L, L0 = _compute_bar_lengths(p, t, fh, L0mult)
+
+        # Density control - remove points that are too close
+        if count > 0:
+            if (count % DENSITY_CONTROL_FREQUENCY) == 0 and (L0 > 2*L).any():
+                p = _density_control(p, bars, L, L0, nfix)
+                N = p.shape[0]; pold = float('inf')
+                # skip to next iteration
+                continue
+        
         # Compute the forces on the bars
-        Ftot, p, N, pold = _compute_forces(p, t, fh, L0mult, nfix, count)
-        if np.all(Ftot == 0):
-            continue
-        #Ftot = _compute_forces(p, t, fh, min_edge_length, L0mult)
+        if opts["force_function"] == "persson_strang":
+            Ftot = _compute_forces_persson_strang(bars, barvec, L, L0, N)
+        elif opts["force_function"] == "bossen_heckbert":
+            Ftot = _compute_forces_bossen_heckbert(bars, barvec, L, L0, N)
+            
+        assert np.all(np.isfinite(Ftot)), "Non-finite forces detected"
         
         # Force = 0 at fixed points
         Ftot[:nfix] = 0
@@ -227,11 +318,11 @@ def generate_mesh(domain, edge_length, **kwargs):
         maxdp = delta_t * np.sqrt((Ftot**2).sum(1)).max()
 
         logger.info(
-            f"Iteration #{count + 1}, max movement is {maxdp}, there are {len(p)} vertices and {len(t)}"
+            f"Iteration #{count + 1}, max movement is {maxdp:.3f}, there are {len(p):,} vertices and {len(t):,}"
         )
 
         end = time.time()
-        logger.info(f"Elapsed wall-clock time {end - start} seconds")
+        logger.info(f"Elapsed wall-clock time {(end - start):.3f} seconds")
 
 
 def _unpack_sizing(edge_length, opts):
@@ -268,19 +359,22 @@ def _get_bars(t):
     return unique_edges(bars)
 
 
-# Persson-Strang
-def _compute_forces(p, t, fh, L0mult, nfix, count):
-    """Compute the forces on each edge based on the sizing function"""
-    N = p.shape[0]
+def _compute_bar_lengths(p, t, fh, L0mult):
+    """Compute the lengths of each bar"""
     bars = _get_bars(t)
     barvec = p[bars[:, 0]] - p[bars[:, 1]]  # List of bar vectors
+    # compute bar lengths
     L = np.sqrt((barvec**2).sum(1))  # L = Bar lengths
     L[L == 0] = np.finfo(float).eps
     hbars = fh(p[bars].sum(1) / 2)
-    # if hbars is excessively large then abort 
-    if np.any(hbars > 1e4):
-        raise ValueError("Problem detected in fh...is extrapolation enabled?")
-    L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars)) 
+    L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars))
+    return bars, barvec, L, L0
+    
+def _compute_forces_persson_strang(bars, barvec, L, L0, N):
+    """
+    Compute the forces on each edge based on the sizing function
+    Linear spring model (Hookes law)
+    """
     F = L0 - L
     F[F < 0] = 0  # Bar forces (scalars)
     Fvec = (
@@ -292,40 +386,27 @@ def _compute_forces(p, t, fh, L0mult, nfix, count):
         np.hstack((Fvec, -Fvec)),
         shape=(N, 2),
     )
-    pold = p 
-    # Density control - remove points that are too close
-    if (count % DENSITY_CONTROL_FREQUENCY) == 0 and (L0 > 2*L).any():
-        ixdel = np.setdiff1d(bars[L0 > 2*L].reshape(-1), np.arange(nfix))
-        p = p[np.setdiff1d(np.arange(N), ixdel)]
-        N = p.shape[0]; pold = float('inf')
-        logger.info(f"Removed {len(ixdel)} points due to excessive density")
-        Ftot *= 0.0 # reset the forces
-        
-    return Ftot, p, N, pold
+    return Ftot
 
 
 # Bossen-Heckbert
-#def _compute_forces(p, t, fh, min_edge_length, L0mult):
-#   """Compute the forces on each edge based on the sizing function"""
-#   N = p.shape[0]
-#   bars = _get_bars(t)
-#   barvec = p[bars[:, 0]] - p[bars[:, 1]]  # List of bar vectors
-#   L = np.sqrt((barvec ** 2).sum(1))  # L = Bar lengths
-#   L[L == 0] = np.finfo(float).eps
-#   hbars = fh(p[bars].sum(1) / 2)
-#   L0 = hbars * L0mult * (np.nanmedian(L) / np.nanmedian(hbars))
-#   LN = L / L0
-#   F = (1 - LN ** 4) * np.exp(-(LN ** 4)) / LN
-#   Fvec = (
-#       F[:, None] / LN[:, None].dot(np.ones((1, 2))) * barvec
-#   )  # Bar forces (x,y components)
-#   Ftot = _dense(
-#       bars[:, [0] * 2 + [1] * 2],
-#       np.repeat([list(range(2)) * 2], len(F), axis=0),
-#       np.hstack((Fvec, -Fvec)),
-#       shape=(N, 2),
-#   )
-#   return Ftot
+def _compute_forces_bossen_heckbert(bars, barvec, L, L0, N):
+   """Compute the forces on each edge based on the sizing function
+   Non-linear spring model (Bossen-Heckbert) with both attractive 
+   and replusive forces
+   """
+   LN = L / L0
+   F = (1 - LN ** 4) * np.exp(-(LN ** 4)) / LN
+   Fvec = (
+       F[:, None] / LN[:, None].dot(np.ones((1, 2))) * barvec
+   )  # Bar forces (x,y components)
+   Ftot = _dense(
+       bars[:, [0] * 2 + [1] * 2],
+       np.repeat([list(range(2)) * 2], len(F), axis=0),
+       np.hstack((Fvec, -Fvec)),
+       shape=(N, 2),
+   )
+   return Ftot
 
 
 def _dense(Ix, J, S, shape=None, dtype=None):
@@ -398,9 +479,6 @@ def _generate_initial_points(min_edge_length, geps, bbox, fh, fd, pfix):
     - A numpy array of points within the domain defined by fd, adjusted by fh, including pfix.
     """
     xmin, xmax, ymin, ymax = bbox.flatten()
-    # create a polygon from the bbox 
-    from shapely.geometry import Polygon
-    bbox_tmp = Polygon([(xmin, ymin), (xmin, ymax), (xmax, ymax), (xmax, ymin)])
     
     h0 = min_edge_length
     # Create initial distribution in bounding box (equilateral triangles)
@@ -442,3 +520,18 @@ def _closest_node(node, nodes):
     deltas = nodes - node
     dist_2 = np.einsum("ij,ij->i", deltas, deltas)
     return np.argmin(dist_2)
+
+def _density_control(p, bars, L, L0, nfix):  
+    '''
+    Density control - remove points that are too close
+    '''
+    ixdel = np.setdiff1d(bars[L0 > 2*L].reshape(-1), np.arange(nfix))
+    N = p.shape[0]
+    p = p[np.setdiff1d(np.arange(N), ixdel)]
+    N = p.shape[0]; pold = float('inf')
+
+    logger.info("*** Density control activated ***")
+    logger.info(f"Removed {len(ixdel)} points due to excessive density")
+    logger.info("*********************************")
+
+    return p

@@ -126,6 +126,19 @@ class Grid(Region):
         grid.values = da.values.T
 
         return grid
+    
+    @property
+    def minimum_spacing(self):
+        """
+        Get the minimum grid spacing
+
+        Returns
+        -------
+        min_spacing: float
+            The minimum grid spacing
+
+        """
+        return min(self.dx, self.dy)
 
     @property
     def dx(self):

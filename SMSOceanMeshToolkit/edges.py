@@ -1,4 +1,6 @@
 import numpy as np
+import matplotlib.pyplot as plt
+import matplotlib.collections as mc
 
 __all__ = ["get_poly_edges", "draw_edges", "get_edges", "get_boundary_edges", "get_winded_boundary_edges"]
 
@@ -6,38 +8,45 @@ nan = np.nan
 
 
 def get_poly_edges(poly):
-    """Given a winded polygon represented as a set of ascending line segments
-    with separated features indicated by nans, this function calculates
-    the edges of the polygon such that each edge indexes the start and end
+    ''' 
+    Calculates the edges of the polygon such that each edge indexes the start and end
     coordinates of each line segment of the polygon.
-
+    
     Parameters
     ----------
     poly: array-like, float
         A 2D array of point coordinates with features sepearated by NaNs
-
+    
     Returns
     -------
     edges: array-like, int
         A 2D array of integers containing indexes into the `poly` array.
-
-    """
-    ix = np.argwhere(np.isnan(poly[:, 0])).ravel()
-    ix = np.insert(ix, 0, -1)
-
+    '''
+    # Find indices where NaNs are located
+    shp_end = np.where(np.isnan(poly[:, 0]))[0]
+    shp_end = np.concatenate(([0], shp_end, [len(poly)]))
+    
     edges = []
-    for s in range(len(ix) - 1):
-        ix_start = ix[s] + 1
-        ix_end = ix[s + 1] - 1
-        col1 = np.arange(ix_start, ix_end - 1)
-        col2 = np.arange(ix_start + 1, ix_end)
-        tmp = np.vstack((col1, col2)).T
-        tmp = np.append(tmp, [[ix_end, ix_start]], axis=0)
-        edges.append(tmp)
-    return np.concatenate(edges, axis=0)
+
+    # Iterate over the segments of the polygon
+    for j in range(len(shp_end) - 1):
+        start = shp_end[j] + 1 if j != 0 else 0
+        end = shp_end[j + 1]
+        segment_indices = np.arange(start, end)
+        
+        # Generate edges for the segment
+        for k in range(len(segment_indices) - 1):
+            edges.append([segment_indices[k], segment_indices[k + 1]])
+        
+        # Close the polygon segment by connecting the last and first points
+        if end - start > 1:  # Ensure there are at least two points to form an edge
+            edges.append([segment_indices[-1], start])
+
+    return np.array(edges, dtype=int)
 
 def draw_edges(poly, edges):
-    """Visualizes the polygon as a bunch of line segments
+    """
+    Visualizes the polygon as a bunch of line segments
 
     Parameters
     ----------
