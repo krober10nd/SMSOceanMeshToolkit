@@ -151,7 +151,7 @@ def generate_mesh(domain, edge_length, **kwargs):
         "pfix": None,
         "points": None,
         "min_edge_length": None,
-        "plot": 999999,
+        "plot": 0,
         "pseudo_dt": 0.2,
         "force_function": "persson_strang", # or "bossen_heckbert"
         "nscreen": 1,
