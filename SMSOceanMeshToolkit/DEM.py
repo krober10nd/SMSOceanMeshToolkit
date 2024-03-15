@@ -1,7 +1,11 @@
+import logging
 from pathlib import Path
 
 import rioxarray as rxr
 import xarray as xr
+
+logger = logging.getLogger(__name__)
+
 
 __all__ = ["DEM"]
 
@@ -11,7 +15,7 @@ class DEM:
     Digitial elevation model read in from a tif or NetCDF file
     """
 
-    def __init__(self, dem_filename, ll_ur=None, band="data"):
+    def __init__(self, dem_filename, ll_ur=None, minimum_resolution=None):
         """
         Read in a digitial elevation model for later use
         in developing mesh sizing functions.
@@ -23,8 +27,9 @@ class DEM:
         llr_ur : tuple, optional
             Lower left and upper right coordinates of the region of interest
             (default is None, which implies the entire domain)
-        band : str, optional
-            Name of the band to read in (default is 'data')
+        minimum_resolution : float, optional
+            Desired minimum resolution DEM shall be used for mesh generation
+            (default is None, which implies no downsampling). 
         """
 
         if isinstance(dem_filename, str):
@@ -53,10 +58,32 @@ class DEM:
         if ll_ur is not None:
             self = self.clip(ll_ur)
 
+        if minimum_resolution is not None:
+            self = self.downsample(minimum_resolution)
+    
+    def downsample(self, r_specified, desired_ratio=3):   
+        """_summary_
+
+        Args:
+            minimum_resolution (_type_): _description_
+        """
+        # determine ratio of current resolution to minimum resolution
+        r_current = self.da.rio.resolution()[0]
+        # Calculate the target resolution to be `desired_ratio` finer than the specified resolution
+        r_target = r_specified / desired_ratio
+        # Calculate the downsample factor
+        downsample_factor = int(r_target / r_current) 
+        logger.info(f"Downsampling DEM by a factor of {downsample_factor}")
+        self.da = self.da.coarsen(x=downsample_factor, y=downsample_factor, boundary='trim').mean()
+        return self
+
+
+
     def clip(self, ll_ur):
         """
         Clip the DEM to the region of interest
         """
+        logger.info(f"Clipping DEM to {ll_ur}")
         min_x, max_x, min_y, max_y = ll_ur
         # verify min_x < max_x and min_y < max_y
         if min_x > max_x:
