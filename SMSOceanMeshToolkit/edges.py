@@ -70,6 +70,42 @@ def draw_edges(poly, edges):
     plt.show()
 
 
+def plot_edges(points, all_boundary_edges, ax=None, show=True, **kwargs):
+    """
+    Visualizes the edges of a mesh
+
+    Parameters
+    ----------
+    points: array-like, float
+        A 2D array of point coordinates
+    all_boundary_edges: array-like, int
+        A 2D array of integers indexing into the `points` array.
+    ax: matplotlib.axes.Axes, optional
+        The axes to plot on
+    show: bool, optional
+        Whether to show the plot or not
+    **kwargs: dict
+        Additional keyword arguments to pass to `matplotlib.collections.LineCollection`
+
+    Returns
+    -------
+    None
+
+    """
+    if ax is None:
+        _, ax = plt.subplots()
+    for boundary_edges in all_boundary_edges:
+        lines = []
+        for edge in boundary_edges:
+            lines.append([points[edge[0]], points[edge[1]]])
+        lc = mc.LineCollection(lines, **kwargs)
+        ax.add_collection(lc)
+        ax.autoscale()
+    if show:
+        plt.show()
+    return ax
+
+
 def unique_row_view(data):
     """https://github.com/numpy/numpy/issues/11136"""
     b = np.ascontiguousarray(data).view(
@@ -144,18 +180,29 @@ def get_winded_boundary_edges(entities, vFirst=None):
     ordering = np.array([choice])
     isVisited[choice] = 1
 
-    vStart, vNext = _bedges[choice, :]
-    while True:
-        locs = np.column_stack(np.where(_bedges == vNext))
-        rows = locs[:, 0]
-        choices = [row for row in rows if isVisited[row] == 0]
-        if len(choices) == 0:
-            break
-        choice = choices[0]
-        ordering = np.append(ordering, [choice])
-        isVisited[choice] = 1
-        nextEdge = _bedges[choice, :]
-        tmp = [v for v in nextEdge if v != vNext]
-        vNext = tmp[0]
-    boundary_edges = boundary_edges[ordering, :]
-    return boundary_edges
+    # while there are still unvisited edges
+    visited_edge = np.zeros((len(_bedges)))
+    visited_edge[choice] = 1
+
+    all_winded_edges = []
+    while not np.all(visited_edge):
+        if len(all_winded_edges) > 0:
+            # select the next possible choice 
+            choice = np.where(isVisited == 0)[0][0]
+            ordering = np.array([choice])
+        vStart, vNext = _bedges[choice, :]
+        while True:
+            locs = np.column_stack(np.where(_bedges == vNext))
+            rows = locs[:, 0]
+            choices = [row for row in rows if isVisited[row] == 0]
+            if len(choices) == 0:
+                break
+            choice = choices[0]
+            ordering = np.append(ordering, [choice])
+            isVisited[choice] = 1
+            nextEdge = _bedges[choice, :]
+            tmp = [v for v in nextEdge if v != vNext]
+            vNext = tmp[0]
+        all_winded_edges.append(_bedges[ordering])
+        visited_edge[ordering] = 1
+    return all_winded_edges 

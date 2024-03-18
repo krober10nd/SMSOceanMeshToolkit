@@ -57,7 +57,7 @@ nan = np.nan
 #     return np.concatenate(edges, axis=0)
 
 
-def _plot(geo, grid_size=100):
+def _plot(geo, grid_size=100, show=False):
     # Assuming _generate_samples and geo.eval are defined elsewhere
     # Grid for hatching
     x_min, x_max, y_min, y_max = geo.bbox
@@ -112,9 +112,10 @@ def _plot(geo, grid_size=100):
 
 
 class SDFDomain:
-    ''' 
+    """
     Simple class to represent a signed distance function domain
-    '''
+    """
+
     def __init__(self, bbox, func):
         self.bbox = bbox
         self.domain = func
@@ -122,8 +123,8 @@ class SDFDomain:
     def eval(self, x):
         return self.domain(x)
 
-    def plot(self, grid_size=100):
-        ax = _plot(self, grid_size=grid_size)
+    def plot(self, grid_size=100, show=True):
+        ax = _plot(self, grid_size=grid_size, show=show)
         return ax
 
     @staticmethod
@@ -174,7 +175,7 @@ def signed_distance_function(coastal_geometry, invert=False):
     Takes a :class:`CoastalGeometry` object containing labeled polygons representing meshing boundaries
     and creates a callable signed distance function that is used during mesh generation.
     The signed distance function returns a negative value if the point is inside the domain
-    and a positive value if the point is outside the domain. Consequently, points with 
+    and a positive value if the point is outside the domain. Consequently, points with
     0 value are on the boundary of the domain.
 
     The returned function `func` becomes a method of the :class:`Domain` and is queried during
@@ -186,7 +187,7 @@ def signed_distance_function(coastal_geometry, invert=False):
         The processed data from :class:`CoastalGeometry` either in the
         form of a Python class or a GeoDataFrame.
     invert: boolean, optional
-        Invert the definition of the domain. Can be useful 
+        Invert the definition of the domain. Can be useful
         if the region meshed appears to be the water body instead of the land.
 
     Returns
@@ -216,13 +217,12 @@ def signed_distance_function(coastal_geometry, invert=False):
         boubox = polygons_to_numpy(boubox)
 
     elif isinstance(coastal_geometry, CoastalGeometry):
-
         bbox = coastal_geometry.bbox
         boubox = coastal_geometry.boubox
         inner = coastal_geometry.inner
         region_polygon = coastal_geometry.region_polygon
 
-    # make sure the first row and the last row are the same 
+    # make sure the first row and the last row are the same
     if not np.all(boubox[0, :] == boubox[-1, :]):
         boubox = np.vstack((boubox, boubox[0, :]))
     boubox = np.asarray(boubox)
@@ -235,14 +235,12 @@ def signed_distance_function(coastal_geometry, invert=False):
         poly = np.vstack((inner, region_polygon))
 
     # create a kdtree for nearest neighbor search for SDF
-    tree = scipy.spatial.cKDTree(
-        poly[~np.isnan(poly[:, 0]), :] 
-    )
+    tree = scipy.spatial.cKDTree(poly[~np.isnan(poly[:, 0]), :])
     # edges of the polygon
     e = get_poly_edges(poly)
-    #vend = e[-1:, 1]
-    # append a row to e 
-    #e = np.vstack((e, [vend[0], e[0, 0]]))
+    # vend = e[-1:, 1]
+    # append a row to e
+    # e = np.vstack((e, [vend[0], e[0, 0]]))
 
     def func(x):
         # Initialize d with some positive number larger than geps
@@ -253,7 +251,7 @@ def signed_distance_function(coastal_geometry, invert=False):
         in_boubox, _ = inpoly2(x, boubox[:-1])
         # points outside the boubox are not inside the domain
         inside[in_boubox] = True
-        # Of the points that are inside the boubox, determine which are also 
+        # Of the points that are inside the boubox, determine which are also
         # inside the multi-polygon representing the domain
         in_shoreline, _ = inpoly2(x[in_boubox], poly, e)
         if invert:

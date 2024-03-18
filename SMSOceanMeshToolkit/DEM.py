@@ -3,6 +3,7 @@ from pathlib import Path
 
 import rioxarray as rxr
 import xarray as xr
+from scipy.interpolate import RegularGridInterpolator
 
 logger = logging.getLogger(__name__)
 
@@ -29,7 +30,7 @@ class DEM:
             (default is None, which implies the entire domain)
         minimum_resolution : float, optional
             Desired minimum resolution DEM shall be used for mesh generation
-            (default is None, which implies no downsampling). 
+            (default is None, which implies no downsampling).
         """
 
         if isinstance(dem_filename, str):
@@ -60,8 +61,8 @@ class DEM:
 
         if minimum_resolution is not None:
             self = self.downsample(minimum_resolution)
-    
-    def downsample(self, r_specified, desired_ratio=3):   
+
+    def downsample(self, r_specified, desired_ratio=3):
         """_summary_
 
         Args:
@@ -72,12 +73,20 @@ class DEM:
         # Calculate the target resolution to be `desired_ratio` finer than the specified resolution
         r_target = r_specified / desired_ratio
         # Calculate the downsample factor
-        downsample_factor = int(r_target / r_current) 
+        downsample_factor = int(r_target / r_current)
         logger.info(f"Downsampling DEM by a factor of {downsample_factor}")
-        self.da = self.da.coarsen(x=downsample_factor, y=downsample_factor, boundary='trim').mean()
+        self.da = self.da.coarsen(
+            x=downsample_factor, y=downsample_factor, boundary="trim"
+        ).mean()
         return self
 
-
+    def eval(self, query_points):
+        """Evaluate the data array at a set of grid points"""
+        interpolator = RegularGridInterpolator(
+            (self.da.y, self.da.x), self.da.values, fill_value=0.0, bounds_error=False
+        )
+        interpolated_values = interpolator(query_points)
+        return interpolated_values
 
     def clip(self, ll_ur):
         """
