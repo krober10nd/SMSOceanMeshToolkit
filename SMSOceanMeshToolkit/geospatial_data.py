@@ -638,6 +638,7 @@ class CoastalGeometry(Region):
         a shoreline to dst_crs
         """
         dst_crs = CRS.from_user_input(dst_crs)
+        assert gdf.crs is not None, "No CRS found in the geodataframe"
         if not gdf.crs.equals(dst_crs):
             logger.info(f"Reprojecting vector data from {gdf.crs} to {dst_crs}")
             gdf = gdf.to_crs(dst_crs)

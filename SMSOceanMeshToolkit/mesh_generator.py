@@ -15,18 +15,8 @@ from .libs._delaunay_class import DelaunayTriangulation as DT
 from .libs._fast_geometry import unique_edges
 from .signed_distance_function import SDFDomain as Domain
 from .plotting import SimplexCollection
-# from .custom_logging import MeshQualityFormatter
 
 logger = logging.getLogger(__name__)
-# # Create and apply the custom formatter
-# ch = logging.StreamHandler()
-# formatter = MeshQualityFormatter()
-# ch.setFormatter(formatter)
-# # Check if the logger already has handlers and remove them to prevent duplicate logs
-# if logger.hasHandlers():
-#     logger.handlers.clear()
-# logger.addHandler(ch)
-
 
 __all__ = ["generate_mesh"]
 

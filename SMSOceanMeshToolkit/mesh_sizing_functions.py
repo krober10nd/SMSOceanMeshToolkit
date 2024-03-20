@@ -118,8 +118,8 @@ def enforce_CFL_condition(
             - 0.0023 * np.cos(6 * mean_latitude)
         )
         # compute degrees to meters factor
-    elif crs.units == "feet":
-        raise NotImplementedError("Support for feet not yet implemented")
+    else:
+        raise NotImplementedError("Support for other crs not yet implemented")
         # TODO: add support for feet
 
     # resolve max. Cr violations
@@ -151,9 +151,9 @@ def enforce_CFL_condition(
     if crs == "EPSG:4326" or crs == 4326:
         # convert back to degrees from meters
         hh_m *= 1 / meters_per_degree
-    elif crs.units == "feet":
+    else:
         # TODO: add support for feet
-        raise NotImplementedError("Support for feet not yet implemented")
+        raise NotImplementedError("Support for other crs not yet implemented")
 
     grid.values = hh_m
     grid.build_interpolant()
