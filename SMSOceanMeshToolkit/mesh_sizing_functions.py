@@ -287,6 +287,8 @@ def feature_sizing_function(
     grid,
     coastal_geometry,
     number_of_elements_per_width=3,
+    max_element_size_nearshore=np.inf, 
+    nearshore_tolerance=0.002,
     max_edge_length=np.inf,
     gradation=0.05,
 ):
@@ -303,6 +305,10 @@ def feature_sizing_function(
         The number of elements per estimated width of the vector data
     max_edge_length: float, optional
         The maximum edge length of the mesh in the units of the grid's crs
+    max_element_size_nearshore: float, optional
+        The maximum edge length of the mesh nearshore in the units of the grid's crs
+    nearshore_tolerance: float, optional
+        The distance from the shoreline to enforce the maximum edge length
     gradation: float, optional
         The decimal percent mesh size gradation rate to-be-enforced.
 
@@ -371,8 +377,15 @@ def feature_sizing_function(
 
     grid_calc.values = feature_size
     grid_calc.build_interpolant()
+    if max_element_size_nearshore is not np.inf:
+        logger.info(f"Enforcing maximum edge length nearshore {nearshore_tolerance} units for {max_element_size_nearshore}...")
+        enforce = dis < nearshore_tolerance
+        # find violations and enforce the maximum edge length 
+        grid_calc.values[enforce] = np.maximum(grid_calc.values[enforce], max_element_size_nearshore)
+
     # interpolate the finer grid used for calculations to the final coarser grid
     grid = grid_calc.interpolate_onto(grid)
+
     if min_edge_length is not None:
         grid.values[grid.values < min_edge_length] = min_edge_length
     if max_edge_length is not np.inf:
