@@ -36,7 +36,7 @@ jobs:
     # if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags')  # Only run on tags
     environment:
       name: pypi
-      url: https://pypi.org/p/SMSOceanMeshToolkit-test
+      url: https://pypi.org/p/SMSOceanMeshToolkit
     permissions:
       id-token: write
 
@@ -48,6 +48,4 @@ jobs:
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@v1.9.0
-        with:
-          repository-url: https://test.pypi.org/legacy/
 
