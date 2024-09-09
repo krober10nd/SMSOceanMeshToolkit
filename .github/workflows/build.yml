@@ -48,4 +48,9 @@ jobs:
 
       - name: Publish package
         uses: pypa/gh-action-pypi-publish@v1.9.0
+        with:
+          packages-dir: .
+          user: SMSOceanMesh
+          password: ${{ secrets.AQUAPI_PASSWORD }}
+          repository-url: https://public.aquapi.aquaveo.com/aquaveo/stable
 
